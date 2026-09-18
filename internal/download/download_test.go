@@ -46,7 +46,7 @@ printf '%s\topus\t152.303\n' "` + filepath.Join(dir, "source.webm") + `"
 	gotArgs := strings.Split(strings.TrimSpace(string(raw)), "\n")
 	wantArgs := []string{
 		"--format", "bestaudio[acodec=opus]/bestaudio",
-		"--no-playlist", "--no-warnings",
+		"--no-playlist",
 		"--progress", "--newline",
 		"--progress-template", "download:GEET-PROGRESS %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s",
 		"--output", filepath.Join(dir, "source.%(ext)s"),

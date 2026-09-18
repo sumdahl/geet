@@ -45,7 +45,12 @@ func Fetch(ctx context.Context, y ytdlp.Runner, url, dir string, onProgress func
 		}
 	},
 		"--format", "bestaudio[acodec=opus]/bestaudio",
-		"--no-playlist", "--no-warnings",
+		// No --no-warnings: yt-dlp's warnings are how ytdlp recognises an
+		// age restriction on a signed-in account that isn't age-verified
+		// ("…requiring account age-verification", then only "Requested
+		// format is not available"), and cookies that can't be decrypted.
+		// stderr is only read on failure, and its last line is the error.
+		"--no-playlist",
 		"--progress", "--newline",
 		"--progress-template", "download:"+progressPrefix+"%(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s",
 		"--output", filepath.Join(dir, "source.%(ext)s"),

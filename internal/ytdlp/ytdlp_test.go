@@ -43,8 +43,9 @@ func TestRunErrors(t *testing.T) {
 		t.Errorf("advice with broken cookies: %s", advice)
 	}
 
-	_, err = fake(t, "ERROR: [youtube] abc: Video unavailable").Run(context.Background())
-	if errors.Is(err, ErrBotCheck) || !strings.HasPrefix(err.Error(), "yt-dlp: [youtube] abc: Video unavailable") {
+	// A transient failure isn't classified: the caller retries it.
+	_, err = fake(t, "ERROR: [download] Got error: HTTP Error 403: Forbidden").Run(context.Background())
+	if errors.Is(err, ErrBotCheck) || errors.Is(err, ErrUnplayable) || !strings.HasPrefix(err.Error(), "yt-dlp: [download] Got error: HTTP Error 403: Forbidden") {
 		t.Errorf("other error: %v", err)
 	}
 
@@ -76,10 +77,6 @@ func TestRunAgeRestricted(t *testing.T) {
 			restricted: true,
 			advice:     "verify your age",
 		},
-		{
-			name:   "a missing format alone is something else",
-			stderr: "ERROR: [youtube] abc: Requested format is not available. Use --list-formats for a list of available formats",
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -95,6 +92,39 @@ func TestRunAgeRestricted(t *testing.T) {
 			}
 			if advice := AgeRestrictedAdvice(fmt.Errorf("download failed: %w", err)); !strings.Contains(advice, tt.advice) {
 				t.Errorf("advice %q lacks %q", advice, tt.advice)
+			}
+		})
+	}
+}
+
+// realSignedInDownload is yt-dlp's stderr from a real download of an
+// age-restricted video with the browser's cookies, for an account that
+// isn't age-verified. Unlike yt-dlp -F, the download says nothing about age:
+// only that no format is available.
+const realSignedInDownload = `WARNING: [youtube] unable to extract yt initial data; please report this issue on  https://github.com/yt-dlp/yt-dlp/issues?q= , filling out the appropriate issue template. Confirm you are on the latest version using  yt-dlp -U
+WARNING: [youtube] Incomplete data received in embedded initial data; re-fetching using API.
+WARNING: [youtube] -yFj3FvoOWY: web_creator client https formats require a GVS PO Token which was not provided. They will be skipped as they may yield HTTP Error 403. You can manually pass a GVS PO Token for this client with --extractor-args "youtube:po_token=web_creator.gvs+XXX". For more information, refer to  https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide
+ERROR: [youtube] -yFj3FvoOWY: Requested format is not available. Use --list-formats for a list of available formats`
+
+func TestRunUnplayable(t *testing.T) {
+	tests := []struct {
+		name, stderr string
+	}{
+		{"signed in, age-restricted, real download", realSignedInDownload},
+		{"removed", "ERROR: [youtube] abc: Video unavailable. This video has been removed by the uploader"},
+		{"private", "ERROR: [youtube] abc: Private video. Sign in if you've been granted access to this video"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := fake(t, tt.stderr).Run(context.Background())
+			if !errors.Is(err, ErrUnplayable) {
+				t.Fatalf("err = %v, want ErrUnplayable", err)
+			}
+			if errors.Is(err, ErrBotCheck) || errors.Is(err, ErrAgeRestricted) {
+				t.Errorf("also reported as bot check or age restriction: %v", err)
+			}
+			if !strings.Contains(err.Error(), "abc") && !strings.Contains(err.Error(), "-yFj3FvoOWY") {
+				t.Errorf("yt-dlp's reason lost: %v", err)
 			}
 		})
 	}

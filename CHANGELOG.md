@@ -7,6 +7,21 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Fixed
+- An explicit song whose official upload YouTube won't serve now still
+  comes as the explicit version. In 0.4.0, Enrique Iglesias's "Tonight
+  (I'm Fuckin' You)" failed in a real 201-song run: signed in, YouTube
+  answers an age-restricted video with only "Requested format is not
+  available", which geet didn't recognise, and it retried three times.
+  Such uploads (no format, removed, private) are now tried once. geet then
+  tries the other uploads of the song, then a wider search (10 results, two
+  phrasings) for explicit copies, before the clean edit.
+- Errors from YouTube Music and the fallbacks lead with the cause ("YouTube
+  wants you to confirm you're not a bot"), and a fallback that hits the bot
+  check reports that instead of "age-restricted".
+- yt-dlp's warnings are no longer suppressed for downloads; geet needs
+  them to recognise age restrictions and undecryptable cookies.
+
 ## [0.4.0] - 2026-09-18
 
 ### Added
