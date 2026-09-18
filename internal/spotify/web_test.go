@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -71,6 +72,8 @@ func TestWebResolve(t *testing.T) {
 		CoverURL: "https://img/640", TrackNumber: 2, Year: 2011, Duration: 122500 * time.Millisecond}
 	loner := Track{ID: "tx", Title: "Loner & Friends", Artists: []string{"Gamma", "Delta"}, AlbumArtist: "Gamma", Album: "Other Album",
 		CoverURL: "https://img/g", TrackNumber: 7, Year: 1999, Duration: 200 * time.Second}
+	twoInPlaylist := two
+	twoInPlaylist.AlbumArtist = "Beta"
 
 	tests := []struct {
 		name     string
@@ -81,7 +84,10 @@ func TestWebResolve(t *testing.T) {
 		{"track joins page meta with album listing", Ref{KindTrack, "t2"}, "Two", []Track{two}},
 		{"track missing from album listing falls back to meta tags", Ref{KindTrack, "tx"}, "Loner & Friends", []Track{loner}},
 		{"album numbers by position and takes year from a track page", Ref{KindAlbum, "alb"}, "Split Album", []Track{one, two}},
-		{"playlist skips episodes and removed tracks", Ref{KindPlaylist, "pl"}, "Mix", []Track{two, loner}},
+		// A playlist's songs are read from their own pages plus the
+		// playlist's listing, without album pages: the album artist is the
+		// song's main artist.
+		{"playlist skips episodes and removed tracks", Ref{KindPlaylist, "pl"}, "Mix", []Track{twoInPlaylist, loner}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -293,5 +299,86 @@ func TestWebTracksRateLimited(t *testing.T) {
 	_, _, err = w.Tracks(context.Background(), []string{"always-limited"})
 	if !errors.Is(err, ErrRateLimited) {
 		t.Errorf("all limited: err = %v", err)
+	}
+}
+
+// A playlist's songs need only their own pages: its listing has the exact
+// artists, length and explicit flag, and each song page the album and cover.
+func TestWebPlaylistReadsNoAlbumPages(t *testing.T) {
+	w := newTestWeb(t)
+	ct := counting(w)
+	if _, err := w.Resolve(context.Background(), Ref{KindPlaylist, "pl"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := ct.count("/embed/album/"); got != 0 {
+		t.Errorf("read %d album pages for a playlist, want 0", got)
+	}
+}
+
+// Without a listing, a song's explicit flag is only on its album page, so
+// the album page is read: explicit songs must come as the explicit version.
+func TestWebTracksWithoutHints(t *testing.T) {
+	w := newTestWeb(t)
+	ct := counting(w)
+	got, _, err := w.Tracks(context.Background(), []string{"t1", "t2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := ct.count("/embed/album/"); n != 1 {
+		t.Errorf("read %d album pages, want 1 shared by both songs", n)
+	}
+	if !got[0].Explicit || got[0].AlbumArtist != "Alpha, Beta" {
+		t.Errorf("t1 explicit %v, album artist %q; want the album page's true, \"Alpha, Beta\"", got[0].Explicit, got[0].AlbumArtist)
+	}
+	if !reflect.DeepEqual(got[1].Artists, []string{"Beta", "Tyler, The Creator"}) {
+		t.Errorf("t2 artists %q", got[1].Artists)
+	}
+}
+
+// --tracks with a playlist link reads the playlist's listing once (Hint), so
+// its songs need only their pages and keep the explicit flag.
+func TestWebHint(t *testing.T) {
+	w := newTestWeb(t)
+	name, err := w.Hint(context.Background(), Ref{KindAlbum, "alb"})
+	if err != nil || name != "Split Album" {
+		t.Fatalf("Hint = %q, %v", name, err)
+	}
+	ct := counting(w)
+	got, _, err := w.Tracks(context.Background(), []string{"t1", "t2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := ct.count("/embed/"); n != 0 {
+		t.Errorf("read %d listing pages after Hint, want 0", n)
+	}
+	if !got[0].Explicit || got[1].Explicit {
+		t.Errorf("explicit flags %v, %v; want the listing's true, false", got[0].Explicit, got[1].Explicit)
+	}
+	if !reflect.DeepEqual(got[1].Artists, []string{"Beta", "Tyler, The Creator"}) {
+		t.Errorf("t2 artists %q", got[1].Artists)
+	}
+}
+
+// A real song page (Kendrick Lamar's "Money Trees", meta tags only).
+func TestFromSongPageRealPage(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("testdata", "page_money_trees.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := map[string][]string{}
+	for _, m := range metaRe.FindAllSubmatch(body, -1) {
+		meta[string(m[1])] = append(meta[string(m[1])], html.UnescapeString(string(m[2])))
+	}
+	w := NewWeb("")
+	if _, ok := w.fromSongPage("2HbKqm4o0w5wEeEFXm2sD4", meta); ok {
+		t.Error("used the song page alone without a hint")
+	}
+	w.addHints([]embedItem{{URI: "spotify:track:2HbKqm4o0w5wEeEFXm2sD4", Title: "Money Trees", Subtitle: "Kendrick Lamar,\u00a0Jay Rock", Duration: 386906, IsExplicit: true}})
+	got, ok := w.fromSongPage("2HbKqm4o0w5wEeEFXm2sD4", meta)
+	want := Track{ID: "2HbKqm4o0w5wEeEFXm2sD4", Title: "Money Trees", Artists: []string{"Kendrick Lamar", "Jay Rock"},
+		AlbumArtist: "Kendrick Lamar", Album: "good kid, m.A.A.d city",
+		CoverURL: "https://i.scdn.co/image/ab67616d0000b273d28d2ebdedb220e479743797", TrackNumber: 5, Year: 2012, Duration: 386906 * time.Millisecond, Explicit: true}
+	if !ok || !reflect.DeepEqual(got, want) {
+		t.Errorf("ok %v\ngot  %+v\nwant %+v", ok, got, want)
 	}
 }

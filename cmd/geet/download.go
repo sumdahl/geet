@@ -288,7 +288,7 @@ func downloadList(ctx context.Context, c *cli, cfg config.Config, rep *reporter,
 
 	rep.setUI(chooseUI(cfg.Progress, stderr, c.json))
 	setupLogging(rep.ui.writer(), c.verbose)
-	col.Tracks, err = readList(ctx, cfg, rep, links)
+	col.Tracks, err = readList(ctx, cfg, rep, links, col.Ref)
 	if err != nil {
 		return rep.fatal(err)
 	}
@@ -297,10 +297,10 @@ func downloadList(ctx context.Context, c *cli, cfg config.Config, rep *reporter,
 }
 
 // readList reads the tracks behind a list of song links, showing progress.
-func readList(ctx context.Context, cfg config.Config, rep *reporter, links []string) ([]spotify.Track, error) {
+func readList(ctx context.Context, cfg config.Config, rep *reporter, links []string, hintFrom spotify.Ref) ([]spotify.Track, error) {
 	steps := newSteps(rep, fmt.Sprintf("Reading %d songs from Spotify", len(links)))
 	defer steps.finish()
-	return resolveList(ctx, cfg, links, steps.report)
+	return resolveList(ctx, cfg, links, hintFrom, steps.report)
 }
 
 // kindList labels a collection read from --tracks without a playlist link:

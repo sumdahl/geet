@@ -195,7 +195,7 @@ func (w *watcher) process(ctx context.Context, j watchJob) {
 	var err error
 	if j.links != nil {
 		col = spotify.Collection{Ref: spotify.Ref{Kind: kindList}, Name: fmt.Sprintf("%d copied songs", len(j.links))}
-		col.Tracks, err = readList(ctx, w.cfg, w.rep, j.links)
+		col.Tracks, err = readList(ctx, w.cfg, w.rep, j.links, spotify.Ref{})
 		lateTags = true
 	} else {
 		col, lateTags, err = readLink(ctx, w.cfg, w.rep, j.link)

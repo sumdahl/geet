@@ -195,12 +195,12 @@ func TestResolveListRejectsNonSongs(t *testing.T) {
 		{"https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"},
 		{"https://open.spotify.com/track/4uJSCrI7r0usNJ3aaHAuC6", "hello"},
 	} {
-		if _, err := resolveList(context.Background(), cfg, links, func(string, int, int) {}); err == nil {
+		if _, err := resolveList(context.Background(), cfg, links, spotify.Ref{}, func(string, int, int) {}); err == nil {
 			t.Errorf("%v: no error", links)
 		}
 	}
 	// A podcast episode copied along with songs is skipped, not an error.
-	if got, err := resolveList(context.Background(), cfg, []string{"spotify:episode:0Q86acNRm6V9GYx55SXKwf"}, func(string, int, int) {}); err != nil || len(got) != 0 {
+	if got, err := resolveList(context.Background(), cfg, []string{"spotify:episode:0Q86acNRm6V9GYx55SXKwf"}, spotify.Ref{}, func(string, int, int) {}); err != nil || len(got) != 0 {
 		t.Errorf("episode: %v, %v", got, err)
 	}
 }

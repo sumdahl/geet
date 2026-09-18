@@ -61,8 +61,12 @@ type Web struct {
 	// ones read now. The caller saves it.
 	Cache *Cache
 
-	mu         sync.Mutex
-	albums     map[string]*webAlbum
+	mu     sync.Mutex
+	albums map[string]*webAlbum
+	// hints are the song details a playlist's or album's own page lists
+	// (exact artists, length, explicit flag), by track ID, so reading a song
+	// of it needs only the song's page.
+	hints      map[string]embedItem
 	albumFetch singleflight.Group // one fetch per album, however many tracks want it
 	// pace spreads requests out across all workers: Spotify rate-limits
 	// bursts, and a 429 costs every worker a pause of up to 30s.
@@ -95,6 +99,7 @@ func NewWeb(baseURL string) *Web {
 		http:    &http.Client{Timeout: 30 * time.Second},
 		baseURL: strings.TrimRight(baseURL, "/"),
 		albums:  make(map[string]*webAlbum),
+		hints:   make(map[string]embedItem),
 		backoff: 2 * time.Second,
 		pace:    rate.NewLimiter(requestsPerSecond, requestBurst),
 	}
@@ -135,20 +140,67 @@ func (w *Web) Resolve(ctx context.Context, ref Ref) (Collection, error) {
 	}
 }
 
+// Track reads one song. A lone song also gets its album's page, which has
+// the explicit flag and the album artist; for one song the extra request
+// doesn't matter. Tracks, for many songs, skips it where it can.
 func (w *Web) Track(ctx context.Context, id string) (Track, error) {
+	return w.cachedTrack(ctx, id, true)
+}
+
+func (w *Web) cachedTrack(ctx context.Context, id string, full bool) (Track, error) {
 	if w.Cache != nil {
 		if t, ok := w.Cache.get(id); ok {
 			return t, nil
 		}
 	}
-	t, err := w.readTrack(ctx, id)
+	t, err := w.readTrack(ctx, id, full)
 	if err == nil && w.Cache != nil {
 		w.Cache.put(t)
 	}
 	return t, err
 }
 
-func (w *Web) readTrack(ctx context.Context, id string) (Track, error) {
+// Hint reads an album's or playlist's own page and keeps its songs'
+// details for Tracks to use, returning its name. It's what reading a list
+// of that playlist's song links (--tracks) costs: one request, for up to
+// the 100 songs the page lists.
+func (w *Web) Hint(ctx context.Context, ref Ref) (string, error) {
+	e, err := w.embed(ctx, ref.Kind, ref.ID)
+	if err != nil {
+		return "", err
+	}
+	w.addHints(e.TrackList)
+	return e.Name, nil
+}
+
+func (w *Web) addHints(items []embedItem) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, it := range items {
+		w.hints[itemID(it)] = it
+	}
+}
+
+func (w *Web) hint(id string) (embedItem, bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	it, ok := w.hints[id]
+	return it, ok
+}
+
+// readTrack reads a song from its page. Unless full, a song its playlist's
+// listing described (a hint: exact artists, length and explicit flag) stops
+// there: the page's description has the album name ("Artists · Album · Song
+// · Year") and og:image the 640px cover. That halves the requests for a
+// playlist, and requests are what Spotify rate-limits. The album artist is
+// then the song's main artist, as the album page is what names "Various
+// Artists".
+//
+// Without a hint the album page is still read: the song page has no
+// explicit flag, and the other source for it, Deezer, is region-filtered
+// (from Nepal it recognised none of 15 explicit songs of a real playlist).
+// Explicit songs must come as the explicit version.
+func (w *Web) readTrack(ctx context.Context, id string, full bool) (Track, error) {
 	meta, err := w.trackMeta(ctx, id)
 	if err != nil {
 		return Track{}, fmt.Errorf("fetching track %s: %w", id, err)
@@ -156,6 +208,11 @@ func (w *Web) readTrack(ctx context.Context, id string) (Track, error) {
 	albumID := lastSegment(first(meta, "music:album"))
 	if albumID == "" {
 		return Track{}, fmt.Errorf("track %s: no album link: %w", id, ErrPageFormat)
+	}
+	if !full {
+		if t, ok := w.fromSongPage(id, meta); ok {
+			return t, nil
+		}
 	}
 	alb, err := w.album(ctx, albumID)
 	if err != nil {
@@ -186,6 +243,41 @@ func (w *Web) readTrack(ctx context.Context, id string) (Track, error) {
 	t.Duration = time.Duration(secs) * time.Second
 	return t, nil
 }
+
+// fromSongPage builds the track from its page and its hint; ok is false
+// without a hint, or when the page isn't in the expected format.
+func (w *Web) fromSongPage(id string, meta map[string][]string) (Track, bool) {
+	it, hinted := w.hint(id)
+	if !hinted {
+		return Track{}, false
+	}
+	desc := strings.Split(first(meta, "og:description"), songDescSep)
+	cover := first(meta, "og:image")
+	// "Kendrick Lamar, Jay Rock · good kid, m.A.A.d city · Song · 2012"
+	if len(desc) < 4 || desc[len(desc)-2] != "Song" || cover == "" {
+		return Track{}, false
+	}
+	t := Track{
+		ID:       id,
+		Title:    first(meta, "og:title"),
+		Album:    strings.Join(desc[1:len(desc)-2], songDescSep),
+		CoverURL: cover,
+		Year:     year(first(meta, "music:release_date")),
+	}
+	t.TrackNumber, _ = strconv.Atoi(first(meta, "music:album:track"))
+	t.Title = it.Title
+	t.Artists = strings.Split(it.Subtitle, embedArtistSep)
+	t.Duration = time.Duration(it.Duration) * time.Millisecond
+	t.Explicit = it.IsExplicit
+	if t.Title == "" || len(t.Artists) == 0 || t.Artists[0] == "" || t.Album == "" {
+		return Track{}, false
+	}
+	t.AlbumArtist = t.Artists[0]
+	return t, true
+}
+
+// songDescSep separates the parts of a song page's og:description.
+const songDescSep = " · "
 
 // Album numbers tracks by their position in the listing, which is wrong from
 // the second disc on; internal/deezer corrects disc and track numbers when
@@ -233,6 +325,7 @@ func (w *Web) Playlist(ctx context.Context, id string) (name string, tracks []Tr
 	if err != nil {
 		return "", nil, false, fmt.Errorf("fetching playlist %s: %w", id, err)
 	}
+	w.addHints(e.TrackList)
 	var ids []string
 	for _, it := range e.TrackList {
 		if it.EntityType != "" && it.EntityType != "track" {
@@ -274,7 +367,7 @@ func (w *Web) Tracks(ctx context.Context, ids []string) (tracks []Track, skipped
 	g.SetLimit(max(w.Workers, 1))
 	for i, id := range ids {
 		g.Go(func() error {
-			t, err := w.Track(gctx, id)
+			t, err := w.cachedTrack(gctx, id, false)
 			switch {
 			case gctx.Err() != nil:
 				return gctx.Err()
