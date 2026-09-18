@@ -19,6 +19,7 @@ import (
 	"github.com/sumdahl/geet/internal/audio"
 	"github.com/sumdahl/geet/internal/clipboard"
 	"github.com/sumdahl/geet/internal/config"
+	"github.com/sumdahl/geet/internal/deezer"
 	"github.com/sumdahl/geet/internal/itunes"
 	"github.com/sumdahl/geet/internal/notify"
 	"github.com/sumdahl/geet/internal/spotify"
@@ -48,7 +49,7 @@ func clipboardJobs(text string) []watchJob {
 		// punctuation.
 		f = strings.Trim(f, `()[]<>"'.,;`)
 		kind := spotify.KindTrack
-		if !itunes.IsRef(f) {
+		if !itunes.IsRef(f) && !deezer.IsRef(f) {
 			ref, err := spotify.ParseURL(f)
 			if err != nil {
 				continue

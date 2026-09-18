@@ -36,6 +36,7 @@ func TestClipboardJobs(t *testing.T) {
 			[]watchJob{{source: playlist, link: playlist}, {source: trackA, links: []string{trackA, trackB}}, {source: album, link: album}},
 		},
 		{"apple music song", "itunes:1499378607", []watchJob{{source: "itunes:1499378607", link: "itunes:1499378607"}}},
+		{"deezer song", "https://www.deezer.com/track/10202476", []watchJob{{source: "https://www.deezer.com/track/10202476", link: "https://www.deezer.com/track/10202476"}}},
 		{"podcast episode", "https://open.spotify.com/episode/4rXLjWdF2ZZpXCVTfWcshS", nil},
 		{"not a link", "just some copied text", nil},
 		{"other site", "https://www.youtube.com/watch?v=l21wGxlWwPw", nil},

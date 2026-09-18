@@ -159,7 +159,7 @@ func (r *reporter) fatal(err error) int {
 }
 
 func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	c := newCLI("download", "download [flags] <spotify-url | apple-music-url | itunes:<id>>", stderr)
+	c := newCLI("download", "download [flags] <spotify-url | apple-music-url | deezer-url | itunes:<id> | deezer:<id>>", stderr)
 	// --tracks alone reads the links from stdin; --tracks=FILE reads a file.
 	// A bool-style flag, so the easily forgotten "-" isn't required.
 	tracksFrom := new(string)
@@ -212,12 +212,17 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 }
 
 // readLink reads the tracks behind one link: a Spotify track, album or
-// playlist, or an Apple Music song (link or itunes:<id>). lateTags is as for
+// playlist, or an Apple Music or Deezer song (link, itunes:<id> or
+// deezer:<id>). lateTags is as for
 // resolveMetadata.
 func readLink(ctx context.Context, cfg config.Config, rep *reporter, link string) (col spotify.Collection, lateTags bool, err error) {
 	if itunes.IsRef(link) {
 		col, err := lookupITunes(ctx, cfg, link)
 		return col, true, err
+	}
+	if deezer.IsRef(link) {
+		col, err := lookupDeezer(ctx, link)
+		return col, false, err
 	}
 	ref, err := spotify.ParseURL(link)
 	if err != nil {
@@ -362,6 +367,21 @@ func prepare(c *cli, stdout, stderr io.Writer) (*reporter, config.Config, error)
 		}
 	}
 	return rep, cfg, nil
+}
+
+// lookupDeezer resolves a "deezer:<id>" reference (what `geet search --json`
+// hands out for Deezer results) or a Deezer track link to a one-track
+// collection. Deezer's entry has the ISRC and disc number already.
+func lookupDeezer(ctx context.Context, link string) (spotify.Collection, error) {
+	id, err := deezer.ParseRef(link)
+	if err != nil {
+		return spotify.Collection{}, err
+	}
+	t, err := deezer.New("").Lookup(ctx, id)
+	if err != nil {
+		return spotify.Collection{}, err
+	}
+	return spotify.Collection{Ref: spotify.Ref{Kind: spotify.KindTrack, ID: t.ID}, Name: t.Title, Tracks: []spotify.Track{t}}, nil
 }
 
 // lookupITunes resolves an "itunes:<id>" reference or Apple Music song link

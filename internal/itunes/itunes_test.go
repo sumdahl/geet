@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sumdahl/geet/internal/deezer"
 	"github.com/sumdahl/geet/internal/spotify"
 )
 
@@ -272,5 +273,93 @@ func TestCleanEdit(t *testing.T) {
 				t.Errorf("CleanEdit = %q (ok %v, clean %v), want %q", got.Title, ok, got.Clean, tt.wantTitle)
 			}
 		})
+	}
+}
+
+// Search lists both catalogs. The clean "Tonight (I'm Lovin' You)" is on
+// three Apple album editions and would rank first on popularity; the
+// explicit original, only on Deezer, goes above it, and the clean edit
+// stays listed right below.
+func TestRankExplicitAboveItsCleanEdit(t *testing.T) {
+	clean := func(album string) spotify.Track {
+		return spotify.Track{ID: "itunes:" + album, Title: "Tonight (I'm Lovin' You) [feat. Ludacris & DJ Frank E]", Artists: []string{"Enrique Iglesias"},
+			Album: album, Year: 2010, Duration: 231 * time.Second}
+	}
+	explicit := spotify.Track{ID: "deezer:10202476", Title: "Tonight (I'm Fuckin' You)", Artists: []string{"Enrique Iglesias", "Ludacris", "DJ Frank E"},
+		Album: "Euphoria", Duration: 234 * time.Second, Explicit: true}
+	other := spotify.Track{ID: "itunes:hero", Title: "Hero", Artists: []string{"Enrique Iglesias"}, Duration: 264 * time.Second}
+
+	ranked := Rank("enrique iglesias tonight", []spotify.Track{clean("Euphoria"), clean("Euphoria (Deluxe)"), clean("Greatest Hits"), other, explicit})
+	var ids []string
+	for _, r := range ranked {
+		ids = append(ids, r.ID)
+	}
+	if len(ids) < 2 || ids[0] != "deezer:10202476" || ids[1] != "itunes:Euphoria" {
+		t.Errorf("order %v, want the explicit original first and its clean edit second", ids)
+	}
+}
+
+func TestRankMergesCatalogsNotEdits(t *testing.T) {
+	apple := spotify.Track{ID: "itunes:1", Title: "Song [feat. Guest]", Artists: []string{"Band"}, Year: 2019, Duration: 200 * time.Second}
+	deezer := spotify.Track{ID: "deezer:2", Title: "Song", Artists: []string{"Band", "Guest"}, Duration: 201 * time.Second, Explicit: true}
+	cleanEdit := spotify.Track{ID: "itunes:3", Title: "Song", Artists: []string{"Band"}, Year: 2019, Duration: 200 * time.Second, Clean: true}
+
+	ranked := Rank("band song", []spotify.Track{apple, deezer, cleanEdit})
+	if len(ranked) != 2 {
+		t.Fatalf("%d results, want 2: the song from both catalogs merged, the clean edit apart", len(ranked))
+	}
+	merged := ranked[0]
+	if merged.Editions != 2 || !merged.Explicit || merged.ID != "deezer:2" || merged.Year != 2019 {
+		t.Errorf("merged %+v (editions %d), want Deezer's explicit entry, keeping Apple's year, 2 editions", merged.Track, merged.Editions)
+	}
+	if !ranked[1].Clean {
+		t.Errorf("second result %q isn't the clean edit", ranked[1].Title)
+	}
+}
+
+// "gunna fukumean" across both catalogs, from real responses. Deezer
+// (region-filtered) lacks Gunna's original and brings look-alikes: other
+// artists' uploads titled "Fukumean Gunna", a type beat, karaoke. Apple has
+// Gunna's clean edit "umean" and his instrumental. Gunna's own songs must
+// lead, the clean edit (the only full version on offer) first.
+func TestRankBothCatalogs(t *testing.T) {
+	c, _ := newTestClient(t)
+	apple, err := c.Search(context.Background(), "Gunna fukumean")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := os.ReadFile(filepath.Join("testdata", "deezer_gunna_fukumean.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Write(body)
+	}))
+	defer srv.Close()
+	dz, err := deezer.New(srv.URL).Search(context.Background(), "gunna fukumean")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ranked := Rank("gunna fukumean", append(apple, dz...))
+	if top := ranked[0]; top.Title != "umean" || top.Artists[0] != "Gunna" {
+		t.Errorf("top result %q by %v, want Gunna's clean edit umean", top.Title, top.Artists)
+	}
+	gunna, other := -1, -1
+	for i, r := range ranked {
+		if r.Artists[0] == "Gunna" && gunna < 0 {
+			gunna = i
+		}
+		if r.Title == "Fukumean Gunna" && other < 0 {
+			other = i
+		}
+	}
+	if other >= 0 && other < gunna {
+		t.Errorf("another artist's %q (#%d) ranks above Gunna's songs (#%d)", "Fukumean Gunna", other+1, gunna+1)
+	}
+	for _, r := range ranked[:3] {
+		if strings.Contains(strings.ToLower(r.Title), "type beat") {
+			t.Errorf("a type beat is in the top 3: %q", r.Title)
+		}
 	}
 }

@@ -47,7 +47,8 @@ const usage = `usage: geet <command> [flags]
 
 commands:
   download <link>          download a Spotify track, album or playlist
-                           (also Apple Music song links and itunes:<id>)
+                           (also Apple Music and Deezer song links, and the
+                           itunes:<id> / deezer:<id> refs geet search prints)
   search <words…>          find a song by name, pick it from a menu, download it
   watch                    download each Spotify link you copy, until stopped
   doctor                   check tools, setup and services, and how to fix problems
@@ -370,7 +371,7 @@ func readLinks(r io.Reader) ([]string, error) {
 // without repeats. It's how playlists over Spotify's 100-track public limit
 // are downloaded in full.
 func resolveList(ctx context.Context, cfg config.Config, links []string, report func(step string, done, total int)) ([]spotify.Track, error) {
-	type slot struct{ spotifyID, itunesID string }
+	type slot struct{ spotifyID, itunesID, deezerID string }
 	var slots []slot
 	var spotifyIDs []string
 	seen := map[string]bool{}
@@ -383,6 +384,17 @@ func resolveList(ctx context.Context, cfg config.Config, links []string, report 
 			if !seen["itunes:"+id] {
 				seen["itunes:"+id] = true
 				slots = append(slots, slot{itunesID: id})
+			}
+			continue
+		}
+		if deezer.IsRef(link) {
+			id, err := deezer.ParseRef(link)
+			if err != nil {
+				return nil, fmt.Errorf("link %d: %w", i+1, err)
+			}
+			if !seen[deezer.RefPrefix+id] {
+				seen[deezer.RefPrefix+id] = true
+				slots = append(slots, slot{deezerID: id})
 			}
 			continue
 		}
@@ -419,7 +431,16 @@ func resolveList(ctx context.Context, cfg config.Config, links []string, report 
 
 	var tracks []spotify.Track
 	it := itunes.New("", cfg.Search.Country)
+	dz := deezer.New("")
 	for _, s := range slots {
+		if s.deezerID != "" {
+			t, err := dz.Lookup(ctx, s.deezerID)
+			if err != nil {
+				return nil, err
+			}
+			tracks = append(tracks, t)
+			continue
+		}
 		if s.itunesID != "" {
 			t, err := it.Lookup(ctx, s.itunesID)
 			if err != nil {
