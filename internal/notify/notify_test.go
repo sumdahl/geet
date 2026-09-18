@@ -64,7 +64,9 @@ func TestSend(t *testing.T) {
 	}
 
 	failing := filepath.Join(dir, "failing")
-	os.WriteFile(failing, []byte("#!/bin/sh\necho 'Cannot connect to the notification server' >&2\nexit 1\n"), 0o755)
+	if err := os.WriteFile(failing, []byte("#!/bin/sh\necho 'Cannot connect to the notification server' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := (Notifier{Bin: failing}).Send(context.Background(), Message{Summary: "x"}); err == nil || !strings.Contains(err.Error(), "notification server") {
 		t.Errorf("failing notify-send: got %v, want its message", err)
 	}

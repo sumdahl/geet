@@ -197,8 +197,8 @@ func pictureBlock(img []byte) string {
 	}
 	mime := http.DetectContentType(img)
 	var b bytes.Buffer
-	be := func(v int) { binary.Write(&b, binary.BigEndian, uint32(v)) }
-	be(3) // front cover
+	be := func(v int) { _ = binary.Write(&b, binary.BigEndian, uint32(v)) } // a bytes.Buffer never fails
+	be(3)                                                                   // front cover
 	be(len(mime))
 	b.WriteString(mime)
 	be(0) // no description

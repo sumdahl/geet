@@ -86,7 +86,7 @@ func TestBestOnRealSearches(t *testing.T) {
 					if s.Reject != "" {
 						b.WriteString("rejected: " + s.Reject)
 					} else {
-						b.WriteString(fmt.Sprintf("%.1f", s.Score))
+						fmt.Fprintf(&b, "%.1f", s.Score)
 					}
 				}
 				t.Errorf("picked %s, want %s; candidates:%s", best.ID, tt.want, b.String())

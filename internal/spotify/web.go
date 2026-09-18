@@ -69,7 +69,7 @@ type Web struct {
 	backoff time.Duration
 }
 
-var ErrRateLimited = errors.New("Spotify is rate-limiting requests")
+var ErrRateLimited = errors.New("Spotify is rate-limiting requests") //nolint:staticcheck // ST1005: "Spotify" is a name
 
 type webAlbum struct {
 	name   string

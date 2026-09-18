@@ -103,7 +103,7 @@ func (r Runner) RunLines(ctx context.Context, onLine func(string), args ...strin
 		onLine(sc.Text())
 	}
 	// Drain anything the scanner gave up on so yt-dlp never blocks writing.
-	io.Copy(io.Discard, stdout)
+	_, _ = io.Copy(io.Discard, stdout)
 
 	if err := cmd.Wait(); err != nil {
 		if ctx.Err() != nil {
