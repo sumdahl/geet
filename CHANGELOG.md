@@ -35,6 +35,13 @@ still change the CLI, the configuration or the `--json` output.
 - Warnings print as plain `warning: …` lines instead of timestamped log
   records. `-v` still shows everything.
 
+### Fixed
+- Reading many songs from Spotify at once could hit HTTP 429 and abort the
+  whole run, after 188 of 201 songs had been read. Now every worker pauses
+  together, honouring Retry-After and backing off up to 30 s, and a song
+  that still can't be read is skipped with a warning while the rest
+  download. Running the same command again fetches the skipped ones.
+
 ## [0.2.0] - 2026-09-18
 
 ### Added
@@ -57,11 +64,6 @@ still change the CLI, the configuration or the `--json` output.
   just the most recent one.
 
 ### Fixed
-- Reading many songs from Spotify at once could hit HTTP 429 and abort the
-  whole run, after 188 of 201 songs had been read. Now every worker pauses
-  together, honouring Retry-After and backing off up to 30 s, and a song
-  that still can't be read is skipped with a warning while the rest
-  download. Running the same command again fetches the skipped ones.
 - A flag mistake (such as `--output` with no value) prints the error and a
   one-line hint instead of the full list of 38 flags. `-h` still shows them
   all.
