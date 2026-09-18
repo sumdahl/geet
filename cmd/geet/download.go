@@ -384,6 +384,11 @@ func (d *downloader) download(ctx context.Context, j *trackJob) (*trackJob, bool
 	j.work = work
 	d.emit(j, "downloading")
 	j.src, err = d.fetch(ctx, j.url, j.work, j.tu, j.ev)
+	if err == nil {
+		// Display only (not an NDJSON stage): the download slot is free
+		// while the track waits for a tagging worker.
+		j.tu.stage(event{Stage: "downloaded"})
+	}
 	return j, false, err
 }
 
@@ -421,7 +426,7 @@ func (d *downloader) reuse(ctx context.Context, t spotify.Track, dest string, ev
 	if d.cfg.Duplicates == "download" {
 		return false, nil
 	}
-	src, ok := d.idx.Lookup(t.ID, t.ISRC, d.cfg.Format)
+	src, ok := d.idx.Lookup(t.ID, t.ISRC, d.cfg.Format, filepath.Dir(dest))
 	if !ok || src == dest {
 		return false, nil
 	}

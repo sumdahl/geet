@@ -15,8 +15,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+	"syscall"
 
 	"golang.org/x/sync/errgroup"
 
@@ -34,8 +36,8 @@ type Index struct {
 	saveMu sync.Mutex // one Save at a time, so an older snapshot never lands last
 
 	mu     sync.Mutex
-	tracks map[string]Entry  // by key(Spotify track ID, extension)
-	isrcs  map[string]string // key(ISRC, extension) -> tracks key
+	tracks map[string]Entry    // by key(track ID, extension)
+	isrcs  map[string][]string // key(ISRC, extension) -> every tracks key with that recording
 }
 
 // key keeps one entry per format, so an opus and an mp3 of the same track
@@ -60,7 +62,7 @@ func DefaultPath() (string, error) {
 // Open loads the index at path. fresh reports that no index existed yet, so
 // files saved before the index was introduced aren't known (see Scan).
 func Open(path string) (idx *Index, fresh bool, err error) {
-	idx = &Index{path: path, tracks: map[string]Entry{}, isrcs: map[string]string{}}
+	idx = &Index{path: path, tracks: map[string]Entry{}, isrcs: map[string][]string{}}
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return idx, true, nil
@@ -80,30 +82,57 @@ func Open(path string) (idx *Index, fresh bool, err error) {
 	return idx, false, nil
 }
 
-// Lookup returns an existing file for the track in format ext: by Spotify ID
-// first, then by ISRC (the same recording under another ID, e.g. on both an
-// album and a single). Entries whose file has been deleted are forgotten.
-func (x *Index) Lookup(id, isrc, ext string) (string, bool) {
+// Lookup returns an existing file for the track in format ext: by track ID,
+// or by ISRC (the same recording under another ID: an album and a single, a
+// Spotify link and a search result). With several copies, it prefers one on
+// the same filesystem as near (where the new file goes), because only that
+// can be hard-linked; the rest would be copied. Entries whose file has been
+// deleted are forgotten.
+func (x *Index) Lookup(id, isrc, ext, near string) (string, bool) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	candidates := []string{key(id, ext)}
 	if isrc != "" {
-		if k, ok := x.isrcs[key(isrc, ext)]; ok {
-			candidates = append(candidates, k)
-		}
+		candidates = append(candidates, x.isrcs[key(isrc, ext)]...)
 	}
+	nearDev, nearOK := deviceOf(near)
+	var fallback string
+	seen := map[string]bool{}
 	for _, k := range candidates {
 		e, ok := x.tracks[k]
-		if !ok {
+		if !ok || seen[e.Path] {
 			continue
 		}
+		seen[e.Path] = true
 		if _, err := os.Stat(e.Path); err != nil {
 			x.remove(k)
 			continue
 		}
-		return e.Path, true
+		if dev, ok := deviceOf(e.Path); nearOK && ok && dev == nearDev {
+			return e.Path, true
+		}
+		if fallback == "" {
+			fallback = e.Path
+		}
 	}
-	return "", false
+	return fallback, fallback != ""
+}
+
+// deviceOf is the filesystem holding path, or its nearest existing parent
+// (a new playlist folder doesn't exist yet when its tracks are looked up).
+func deviceOf(path string) (uint64, bool) {
+	for p := path; ; p = filepath.Dir(p) {
+		if fi, err := os.Stat(p); err == nil {
+			st, ok := fi.Sys().(*syscall.Stat_t)
+			if !ok {
+				return 0, false
+			}
+			return uint64(st.Dev), true
+		}
+		if parent := filepath.Dir(p); parent == p {
+			return 0, false
+		}
+	}
 }
 
 // Add records a saved file. It doesn't replace an entry whose file still
@@ -126,13 +155,18 @@ func (x *Index) Add(id, isrc, path string) {
 func (x *Index) put(k string, e Entry) {
 	x.tracks[k] = e
 	if e.ISRC != "" {
-		x.isrcs[key(e.ISRC, filepath.Ext(e.Path))] = k
+		ik := key(e.ISRC, filepath.Ext(e.Path))
+		if !slices.Contains(x.isrcs[ik], k) {
+			x.isrcs[ik] = append(x.isrcs[ik], k)
+		}
 	}
 }
 
 func (x *Index) remove(k string) {
-	if e, ok := x.tracks[k]; ok {
-		if ik := key(e.ISRC, filepath.Ext(e.Path)); x.isrcs[ik] == k {
+	if e, ok := x.tracks[k]; ok && e.ISRC != "" {
+		ik := key(e.ISRC, filepath.Ext(e.Path))
+		x.isrcs[ik] = slices.DeleteFunc(x.isrcs[ik], func(s string) bool { return s == k })
+		if len(x.isrcs[ik]) == 0 {
 			delete(x.isrcs, ik)
 		}
 	}

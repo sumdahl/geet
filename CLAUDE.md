@@ -44,6 +44,8 @@ A Go CLI that takes a Spotify track, album or playlist URL, gets its metadata (s
 - `internal/library`: output path = `output` (plus `FolderName(playlist)` for playlists) + `output_template` + extension. Each template segment is exactly one path component, sanitized.
 - Resolving a link returns a `spotify.Collection` (ref, name, tracks). The name is what the playlist folder is named after.
 - `internal/index`: the download index, which stops the same song being downloaded twice (hard link, copy or skip, per `duplicates`).
+  - It keeps every copy of a recording (ISRC maps to a list of keys).
+  - `Lookup` prefers a copy on the destination's filesystem, because only that can be hard-linked.
   - It relies on the comment tag holding the Spotify track URL, which `internal/audio` writes. The first-run `Scan` finds old downloads that way, so never drop that tag.
 - `internal/itunes` and `cmd/geet/search.go`/`pick.go`: `geet search`, which uses the keyless iTunes catalog, then ranks, picks with fzf or a numbered list, and runs the same pipeline.
   - Raw iTunes order is unusable: covers come before originals, and each album edition repeats. `Rank` merges editions and uses the edition count as popularity.
@@ -58,6 +60,9 @@ A Go CLI that takes a Spotify track, album or playlist URL, gets its metadata (s
 - Downloads retry `download_retries` times (default 2), because YouTube fails transiently (403s, throttling). yt-dlp errors lead with yt-dlp's own reason so it survives truncation in the display.
 - `cmd/geet/ui.go`: the stderr display, using mpb bars (`barUI`) in a terminal and plain lines (`plainUI`) otherwise.
   - A finished track's bar is removed and a permanent result line is logged above the live area, because mpb never draws a bar that completes before its first refresh.
+  - Runs of more than 8 tracks use compact mode: a bar only while downloading or tagging, and a bottom summary line (`BarPriority(MaxInt32)`) with per-state counts.
+  - The summary never completes on its own, so `close()` aborts it before `p.Wait()`.
+  - `"downloaded"` is a UI-only stage (not in the NDJSON), so a track waiting for a tag worker stops counting as downloading.
   - Never call into a `*mpb.Bar` while holding `barTrack.mu`: the render goroutine takes that lock in `status`.
   - To test the animation headlessly, the pty needs a size: `script -qefc "stty cols 150 rows 40; <cmd>" /dev/null`. With 0 rows mpb draws nothing.
 - `cmd/geet`: the subcommands `download <url>` and `watch`. `watch` is a daemon that polls `wl-paste` (Wayland, not xclip) about once a second and sends a `notify-send` notification with the cover art. Flags: `--format --output --bitrate --jobs --resolve-jobs --json`.

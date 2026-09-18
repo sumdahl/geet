@@ -42,7 +42,7 @@ func TestLookup(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := idx.Lookup(tt.id, tt.isrc, tt.ext)
+			got, ok := idx.Lookup(tt.id, tt.isrc, tt.ext, dir)
 			if ok != (tt.want != "") || got != tt.want {
 				t.Errorf("Lookup = %q, %v; want %q", got, ok, tt.want)
 			}
@@ -60,12 +60,12 @@ func TestAddKeepsFirstExistingCopy(t *testing.T) {
 	second := touch(t, filepath.Join(dir, "b", "s.opus"), "x")
 	idx.Add("s", "", first)
 	idx.Add("s", "", second)
-	if got, _ := idx.Lookup("s", "", "opus"); got != first {
+	if got, _ := idx.Lookup("s", "", "opus", ""); got != first {
 		t.Errorf("got %q, want the first copy %q", got, first)
 	}
 	os.Remove(first)
 	idx.Add("s", "", second)
-	if got, _ := idx.Lookup("s", "", "opus"); got != second {
+	if got, _ := idx.Lookup("s", "", "opus", ""); got != second {
 		t.Errorf("got %q, want %q once the first is gone", got, second)
 	}
 }
@@ -83,7 +83,7 @@ func TestSaveAndReopen(t *testing.T) {
 	if err != nil || fresh {
 		t.Fatalf("reopen: fresh=%v err=%v", fresh, err)
 	}
-	if got, ok := again.Lookup("other-id", "ISRC1", "opus"); !ok || got != f {
+	if got, ok := again.Lookup("other-id", "ISRC1", "opus", ""); !ok || got != f {
 		t.Errorf("ISRC lookup after reopen = %q, %v", got, ok)
 	}
 }
@@ -151,13 +151,13 @@ func TestScan(t *testing.T) {
 	if idx.Len() != 3 {
 		t.Errorf("indexed %d files, want 3", idx.Len())
 	}
-	if got, _ := idx.Lookup("itunes:1499378607", "", "opus"); got != searched {
+	if got, _ := idx.Lookup("itunes:1499378607", "", "opus", ""); got != searched {
 		t.Errorf("search download = %q", got)
 	}
-	if got, _ := idx.Lookup("stanID", "", "opus"); got != opus {
+	if got, _ := idx.Lookup("stanID", "", "opus", ""); got != opus {
 		t.Errorf("stan = %q", got)
 	}
-	if got, _ := idx.Lookup("other", "USSM2", "mp3"); got != mp3 {
+	if got, _ := idx.Lookup("other", "USSM2", "mp3", ""); got != mp3 {
 		t.Errorf("mask off by ISRC = %q", got)
 	}
 }
@@ -166,5 +166,37 @@ func TestScanMissingRoot(t *testing.T) {
 	idx, _, _ := Open(filepath.Join(t.TempDir(), "index.json"))
 	if err := idx.Scan(context.Background(), "ffprobe", "/nonexistent/music", nil); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Several copies of one recording (e.g. a test copy in /tmp and the real
+// one in ~/Music): the one on the destination's filesystem wins, since only
+// it can be hard-linked. Here both sit on one filesystem, so the check is
+// that a copy registered later under another ID doesn't displace the first,
+// and that a deleted copy falls back to the other.
+func TestLookupPrefersUsableCopy(t *testing.T) {
+	dir := t.TempDir()
+	idx, _, _ := Open(filepath.Join(dir, "index.json"))
+	music := touch(t, filepath.Join(dir, "Music", "Blinding Lights.opus"), "x")
+	other := touch(t, filepath.Join(dir, "elsewhere", "Blinding Lights.opus"), "x")
+	idx.Add("itunes:1", "USUG11904206", music)
+	idx.Add("itunes:2", "USUG11904206", other) // another edition, same recording
+
+	got, ok := idx.Lookup("spotify-id", "USUG11904206", "opus", filepath.Join(dir, "Music", "new-playlist"))
+	if !ok || got != music {
+		t.Errorf("got %q, want the first copy %q (same filesystem, registered first)", got, music)
+	}
+	os.Remove(music)
+	if got, _ := idx.Lookup("spotify-id", "USUG11904206", "opus", dir); got != other {
+		t.Errorf("after deleting it: got %q, want %q", got, other)
+	}
+}
+
+func TestDeviceOfMissingPath(t *testing.T) {
+	dir := t.TempDir()
+	a, ok1 := deviceOf(dir)
+	b, ok2 := deviceOf(filepath.Join(dir, "not", "yet", "created"))
+	if !ok1 || !ok2 || a != b {
+		t.Errorf("deviceOf: %d,%v vs %d,%v", a, ok1, b, ok2)
 	}
 }

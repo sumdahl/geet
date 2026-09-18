@@ -7,6 +7,17 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Changed
+- Big runs (more than 8 tracks) use a compact display. Only tracks that are
+  downloading or tagging get a progress bar, and one summary line at the
+  bottom counts the rest: `14 finding on YouTube · 11 queued · 16
+  downloading · 2 tagging · 5/49 done`. At `--jobs 16` the live area went
+  from about 45 lines to at most 20, so it fits a normal terminal.
+- When the same song exists in several places, duplicate linking prefers a
+  copy on the same drive as the destination, so it can be hard-linked
+  instead of copied. The index now remembers every copy of a recording, not
+  just the most recent one.
+
 ### Fixed
 - A flag mistake (such as `--output` with no value) prints the error and a
   one-line hint instead of the full list of 38 flags. `-h` still shows them

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -111,21 +112,35 @@ func (t plainTrack) stage(e event) {
 
 func (plainTrack) progress(int64, int64) {}
 
-// barUI draws one animated line per track in progress with mpb. A finished
-// track's bar is removed and replaced by a permanent result line printed
-// above the live area: mpb never draws a bar that completes before its first
-// refresh (an existing file, an instant failure), and this way every track
-// still leaves exactly one line behind.
+// barUI draws animated progress with mpb.
+//
+// A finished track's bar is removed and replaced by a permanent result line
+// printed above the live area: mpb never draws a bar that completes before
+// its first refresh (an existing file, an instant failure), and this way
+// every track still leaves exactly one line behind.
+//
+// In compact mode (runs of more than compactOver tracks) only tracks that
+// are downloading or tagging (or waiting between the two) get a bar; the rest (still being found on
+// YouTube, or queued for a download slot) are counted on one summary line at
+// the bottom. With 16 downloads and 24 lookups at once, a bar per track
+// would be taller than most terminals.
 type barUI struct {
-	p     *mpb.Progress
-	color bool
+	p       *mpb.Progress
+	color   bool
+	started time.Time
+
+	mu      sync.Mutex
+	total   int
+	counts  map[string]int // tracks per state: finding, queued, downloading, tagging, done, failed
+	summary *mpb.Bar       // compact mode only
 }
 
 const (
-	barTotal   = 1000
-	barDownEnd = 990 // download fills up to here; the rest is tagging
-	nameWidth  = 42
-	errWidth   = 70
+	barTotal    = 1000
+	barDownEnd  = 990 // download fills up to here; the rest is tagging
+	nameWidth   = 42
+	errWidth    = 70
+	compactOver = 8
 )
 
 var spinner = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -137,7 +152,9 @@ func newBarUI(w io.Writer) *barUI {
 			mpb.WithWidth(24),
 			mpb.WithRefreshRate(100*time.Millisecond),
 		),
-		color: os.Getenv("NO_COLOR") == "",
+		color:   os.Getenv("NO_COLOR") == "",
+		started: time.Now(),
+		counts:  map[string]int{},
 	}
 }
 
@@ -148,19 +165,65 @@ func (u *barUI) paint(code, s string) string {
 	return "\x1b[" + code + "m" + s + "\x1b[0m"
 }
 
+func (u *barUI) spin(since time.Time) string {
+	return u.paint("36", spinner[int(time.Since(since)/(80*time.Millisecond))%len(spinner)])
+}
+
 func (u *barUI) track(index, total int, name string) trackUI {
 	label := fmt.Sprintf("[%*d/%d] %s", len(fmt.Sprint(total)), index, total, fit(name, nameWidth))
-	t := &barTrack{ui: u, label: label, started: time.Now()}
-	style := mpb.BarStyle().Lbound("").Rbound("").Filler("━").Tip("━").Padding("─").
-		FillerMeta(func(s string) string { return u.paint("32", s) }).
-		TipMeta(func(s string) string { return u.paint("32", s) }).
-		PaddingMeta(func(s string) string { return u.paint("2", s) })
-	t.bar = u.p.New(barTotal, style,
-		mpb.PrependDecorators(decor.Name(label, decor.WCSyncSpaceR)),
-		mpb.AppendDecorators(decor.Any(t.status, decor.WC{C: decor.DindentRight})),
-		mpb.BarRemoveOnComplete(),
-	)
+	t := &barTrack{ui: u, label: label, started: time.Now(), state: "finding"}
+
+	u.mu.Lock()
+	u.counts["finding"]++
+	compact := total > compactOver
+	startSummary := compact && u.summary == nil && u.total == 0
+	u.total = total
+	u.mu.Unlock()
+
+	if startSummary {
+		// Highest priority: mpb draws it below every track bar.
+		bar := u.p.New(0, mpb.NopStyle(),
+			mpb.PrependDecorators(decor.Any(u.summaryLine)),
+			mpb.BarPriority(math.MaxInt32),
+		)
+		u.mu.Lock()
+		u.summary = bar
+		u.mu.Unlock()
+	}
+	if !compact {
+		t.showBar()
+	}
 	return t
+}
+
+// summaryLine is the compact mode's bottom line, e.g.
+// "⠹ 20 finding on YouTube · 7 queued · 16 downloading · 12/48 done".
+func (u *barUI) summaryLine(decor.Statistics) string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	var parts []string
+	add := func(n int, what string) {
+		if n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, what))
+		}
+	}
+	add(u.counts["finding"], "finding on YouTube")
+	add(u.counts["queued"], "queued")
+	add(u.counts["downloading"], "downloading")
+	add(u.counts["waiting"], "waiting to tag")
+	add(u.counts["tagging"], "tagging")
+	parts = append(parts, fmt.Sprintf("%d/%d done", u.counts["done"], u.total))
+	if n := u.counts["failed"]; n > 0 {
+		parts = append(parts, u.paint("31", fmt.Sprintf("%d failed", n)))
+	}
+	return u.spin(u.started) + " " + strings.Join(parts, u.paint("2", " · "))
+}
+
+func (u *barUI) move(from, to string) {
+	u.mu.Lock()
+	u.counts[from]--
+	u.counts[to]++
+	u.mu.Unlock()
 }
 
 func (u *barUI) phase(label string) phaseUI {
@@ -172,7 +235,7 @@ func (u *barUI) phase(label string) phaseUI {
 	// Total is unknown until the first set; the spinner shows life meanwhile.
 	ph.bar = u.p.New(0, style,
 		mpb.PrependDecorators(decor.Any(func(decor.Statistics) string {
-			return u.paint("36", spinner[int(time.Since(ph.started)/(80*time.Millisecond))%len(spinner)]) + " " + label
+			return u.spin(ph.started) + " " + label
 		}, decor.WCSyncSpaceR)),
 		mpb.AppendDecorators(decor.Any(func(s decor.Statistics) string {
 			if s.Total <= 0 {
@@ -212,50 +275,101 @@ func (u *barUI) close(abort bool) {
 		u.p.Shutdown()
 		return
 	}
+	// The summary never completes on its own; Wait would block on it.
+	u.mu.Lock()
+	summary := u.summary
+	u.mu.Unlock()
+	if summary != nil {
+		summary.Abort(true)
+	}
 	u.p.Wait()
 }
 
 type barTrack struct {
 	ui      *barUI
-	bar     *mpb.Bar
 	label   string
 	started time.Time
 
 	mu          sync.Mutex
-	stageName   string
+	bar         *mpb.Bar // nil until shown
+	state       string   // finding, queued, downloading, tagging, done, failed
 	done, total int64
+}
+
+// showBar gives the track its animated line, once.
+func (t *barTrack) showBar() *mpb.Bar {
+	t.mu.Lock()
+	bar := t.bar
+	t.mu.Unlock()
+	if bar != nil {
+		return bar
+	}
+	u := t.ui
+	style := mpb.BarStyle().Lbound("").Rbound("").Filler("━").Tip("━").Padding("─").
+		FillerMeta(func(s string) string { return u.paint("32", s) }).
+		TipMeta(func(s string) string { return u.paint("32", s) }).
+		PaddingMeta(func(s string) string { return u.paint("2", s) })
+	bar = u.p.New(barTotal, style,
+		mpb.PrependDecorators(decor.Name(t.label, decor.WCSyncSpaceR)),
+		mpb.AppendDecorators(decor.Any(t.status, decor.WC{C: decor.DindentRight})),
+		mpb.BarRemoveOnComplete(),
+	)
+	t.mu.Lock()
+	t.bar = bar
+	t.mu.Unlock()
+	return bar
 }
 
 func (t *barTrack) status(decor.Statistics) string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	spin := t.ui.paint("36", spinner[int(time.Since(t.started)/(80*time.Millisecond))%len(spinner)])
-	switch t.stageName {
-	case "":
+	spin := t.ui.spin(t.started)
+	switch t.state {
+	case "finding":
 		return spin + " finding on YouTube"
-	case "resolved":
+	case "queued":
 		return t.ui.paint("2", "· queued for download")
 	case "downloading":
 		if t.total <= 0 {
 			return spin + " downloading"
 		}
 		return fmt.Sprintf("%s downloading %3d%%  %s / %s", spin, t.done*100/t.total, mib(t.done), mib(t.total))
+	case "waiting":
+		return t.ui.paint("2", "· downloaded, waiting to tag")
 	case "tagging":
 		return spin + " tagging & cover art"
 	}
 	return "" // done or failed: the bar is on its way out
 }
 
-// stage never calls into the bar while holding t.mu: mpb's render goroutine
-// calls status, which takes t.mu, so doing both would deadlock.
-func (t *barTrack) stage(e event) {
-	t.mu.Lock()
-	t.stageName = e.Stage
-	t.mu.Unlock()
+var stateOf = map[string]string{
+	"resolved": "queued", "downloading": "downloading", "downloaded": "waiting",
+	"tagging": "tagging", "done": "done", "failed": "failed",
+}
 
-	switch e.Stage {
+// stage never calls into a bar or the UI's counters while holding t.mu:
+// mpb's render goroutine calls status and summaryLine, which take those
+// locks, so holding one while waiting on a bar would deadlock.
+func (t *barTrack) stage(e event) {
+	next, ok := stateOf[e.Stage]
+	if !ok {
+		return
+	}
+	t.mu.Lock()
+	prev := t.state
+	t.state = next
+	bar := t.bar
+	t.mu.Unlock()
+	if prev == next {
+		return // repeated "downloading" progress events
+	}
+	t.ui.move(prev, next)
+
+	switch next {
+	case "downloading":
+		t.showBar()
 	case "tagging":
-		t.bar.SetCurrent(barDownEnd)
+		t.showBar().SetCurrent(barDownEnd)
 	case "done":
 		from := filepath.Base(filepath.Dir(e.DuplicateOf))
 		switch {
@@ -270,19 +384,24 @@ func (t *barTrack) stage(e event) {
 		default:
 			t.ui.log("%s %s", t.label, t.ui.paint("32", "✓ saved"))
 		}
-		t.bar.SetTotal(barTotal, true)
+		if bar != nil {
+			bar.SetTotal(barTotal, true)
+		}
 	case "failed":
 		t.ui.log("%s %s", t.label, t.ui.paint("31", "✗ "+runewidth.Truncate(e.Error, errWidth, "…")))
-		t.bar.Abort(true)
+		if bar != nil {
+			bar.Abort(true)
+		}
 	}
 }
 
 func (t *barTrack) progress(done, total int64) {
 	t.mu.Lock()
 	t.done, t.total = done, total
+	bar := t.bar
 	t.mu.Unlock()
-	if total > 0 {
-		t.bar.SetCurrent(min(done, total) * barDownEnd / total)
+	if bar != nil && total > 0 {
+		bar.SetCurrent(min(done, total) * barDownEnd / total)
 	}
 }
 
