@@ -7,6 +7,11 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Fixed
+- A flag mistake (such as `--output` with no value) prints the error and a
+  one-line hint instead of the full list of 38 flags. `-h` still shows them
+  all.
+
 ## [0.1.0] - 2026-09-18
 
 First release.

@@ -89,6 +89,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 type cli struct {
 	fs         *flag.FlagSet
+	help       func() // the full flag list, for -h
 	configPath string
 	json       bool
 	verbose    bool
@@ -99,7 +100,13 @@ type cli struct {
 func newCLI(name, synopsis string, stderr io.Writer) *cli {
 	c := &cli{fs: flag.NewFlagSet(name, flag.ContinueOnError), overrides: map[string]string{}}
 	c.fs.SetOutput(stderr)
+	// The flag package calls Usage on every parse error; a typo should get
+	// the error and a pointer, not all the flags. -h gets the full list
+	// (see parse).
 	c.fs.Usage = func() {
+		fmt.Fprintf(stderr, "usage: geet %s\nRun \"geet %s -h\" to see all flags.\n", synopsis, name)
+	}
+	c.help = func() {
 		fmt.Fprintf(stderr, "usage: geet %s\n\nflags:\n", synopsis)
 		c.fs.PrintDefaults()
 	}
@@ -129,6 +136,16 @@ func newCLI(name, synopsis string, stderr io.Writer) *cli {
 // parse accepts flags before and after positional arguments, so both
 // `download --json <url>` and `download <url> --json` work.
 func (c *cli) parse(args []string) ([]string, error) {
+	// Answer -h here: the flag package would print the short usage first.
+	for _, a := range args {
+		if a == "--" {
+			break
+		}
+		if a == "-h" || a == "-help" || a == "--help" {
+			c.help()
+			return nil, flag.ErrHelp
+		}
+	}
 	var positional []string
 	for {
 		if err := c.fs.Parse(args); err != nil {
