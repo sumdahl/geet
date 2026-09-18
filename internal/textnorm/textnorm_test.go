@@ -16,11 +16,31 @@ func TestNorm(t *testing.T) {
 		{"हताररिँदै, बतासिँदै", "हताररिँदै बतासिँदै"},
 		{"सज्जन राज वैद्य", "सज्जन राज वैद्य"},
 		{"Ni**as In Paris", "ni as in paris"},
+		{"A$AP Rocky", "asap rocky"},
+		{"Joey Bada$$", "joey badass"},
+		{"Ty Dolla $ign", "ty dolla sign"},
+		{"Ke$ha", "kesha"},
+		{"$100 Bill", "100 bill"},
+		{"Rich $ Kid", "rich kid"},
 		{"", ""},
 	}
 	for _, tt := range tests {
 		if got := Norm(tt.in); got != tt.want {
 			t.Errorf("Norm(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestCompact(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"A$AP Rocky", "asaprocky"},
+		{"ASAPROCKYUPTOWN", "asaprockyuptown"},
+		{"Big K.R.I.T.", "bigkrit"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := Compact(tt.in); got != tt.want {
+			t.Errorf("Compact(%q) = %q, want %q", tt.in, got, tt.want)
 		}
 	}
 }

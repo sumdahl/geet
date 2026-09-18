@@ -7,6 +7,16 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Fixed
+- Songs whose official upload names the artist only in a run-together
+  channel name, or writes the title with different spacing, no longer fail
+  with "no YouTube result matched". A$AP Rocky's "1Train" failed on both
+  counts: the verified channel is `ASAPROCKYUPTOWN`, and fan uploads write
+  "1 Train". Matching now reads a `$` in a name as `s` (A$AP → ASAP, Joey
+  Bada$$ → Badass), matches words split differently ("1Train" / "1 Train"),
+  and accepts an artist name of five or more letters at the start of a
+  channel name.
+
 ### Changed
 - The README no longer recommends `resolve_jobs = 24`. Measured on a
   42-song playlist, 24 wasn't faster than the default 8, and reading many

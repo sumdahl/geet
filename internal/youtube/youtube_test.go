@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sumdahl/geet/internal/spotify"
+	"github.com/sumdahl/geet/internal/textnorm"
 	"github.com/sumdahl/geet/internal/ytdlp"
 )
 
@@ -71,6 +72,19 @@ func TestBestOnRealSearches(t *testing.T) {
 			fixture: "niggas_in_paris.ndjson",
 			track:   spotify.Track{Title: "Ni**as In Paris", Artists: []string{"JAŸ-Z", "Kanye West"}, Duration: 219 * time.Second},
 			want:    "fbFnF-86eYs",
+		},
+		{
+			// The official channel, ASAPROCKYUPTOWN, names the artist only as
+			// one run-together word with "$" spelled "S", and Spotify writes
+			// "1Train" where fan uploads write "1 Train".
+			name:    "run-together channel name and title",
+			fixture: "1train.ndjson",
+			track: spotify.Track{
+				Title:    "1Train (feat. Kendrick Lamar, Joey Bada$$, Yelawolf, Danny Brown, Action Bronson & Big K.R.I.T.)",
+				Artists:  []string{"A$AP Rocky", "Kendrick Lamar", "Joey Bada$$", "Yelawolf", "Danny Brown", "Action Bronson", "Big K.R.I.T."},
+				Duration: 372173 * time.Millisecond,
+			},
+			want: "TvEhl8IBWVo",
 		},
 	}
 	for _, tt := range tests {
@@ -162,6 +176,49 @@ func TestScoreRules(t *testing.T) {
 				t.Errorf("score %.1f vs plain %.1f, want lower = %v", s.Score, baseScore, tt.wantLower)
 			}
 		})
+	}
+}
+
+func TestTokenCoverageJoinsWords(t *testing.T) {
+	tests := []struct {
+		want, have string
+		cover      float64
+	}{
+		{"1Train", "A$AP Rocky - 1 Train ft Kendrick Lamar", 1},
+		{"1 Train", "A$AP Rocky - 1Train", 1},
+		{"Superstar", "Super Star (Official Audio)", 1},
+		{"Super Star", "Superstar", 1},
+		{"Up", "Upside Down", 0},             // a word never matches part of a word
+		{"Blinding Lights", "Blinding", 0.5}, // joins add matches, they don't loosen them
+	}
+	for _, tt := range tests {
+		got := tokenCoverage(textnorm.Words(tt.want), textnorm.Words(tt.have))
+		if got != tt.cover {
+			t.Errorf("tokenCoverage(%q in %q) = %v, want %v", tt.want, tt.have, got, tt.cover)
+		}
+	}
+}
+
+func TestArtistMatchChannelHandle(t *testing.T) {
+	tests := []struct {
+		artists []string
+		title   string
+		channel string
+		want    int
+	}{
+		{[]string{"A$AP Rocky"}, "1Train", "ASAPROCKYUPTOWN", 1},
+		{[]string{"A$AP Rocky"}, "1Train", "ASAP Rocky", 1},
+		{[]string{"A$AP Rocky"}, "ASAP Rocky - 1Train", "Some Fan", 1},
+		{[]string{"The Weeknd", "Daft Punk"}, "Starboy", "DaftPunkVEVO", 2},
+		{[]string{"SZA"}, "Kill Bill", "szafanpage", 0}, // too short to trust inside a handle
+		{[]string{"A$AP Rocky"}, "1Train", "Rocky Uploads", 0},
+		{[]string{"A$AP Rocky"}, "1Train", "TheASAPROCKYchannel", 0}, // only at the start
+	}
+	for _, tt := range tests {
+		tokens := append(textnorm.Tokens(tt.title), textnorm.Tokens(tt.channel)...)
+		if got := artistMatch(tt.artists, tokens, tt.channel); got != tt.want {
+			t.Errorf("artistMatch(%q, %q | %q) = %d, want %d", tt.artists, tt.title, tt.channel, got, tt.want)
+		}
 	}
 }
 

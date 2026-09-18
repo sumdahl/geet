@@ -59,7 +59,7 @@ func score(t spotify.Track, c Candidate, rank, n int, maxDiff time.Duration) Sco
 	s.Score += weightTitle * coverage
 
 	channel := textnorm.Tokens(c.Channel)
-	switch artistMatch(t.Artists, append(slices.Clone(ytTitle), channel...)) {
+	switch artistMatch(t.Artists, append(slices.Clone(ytTitle), channel...), c.Channel) {
 	case 0:
 		return reject("no artist named")
 	case 1:
@@ -118,26 +118,63 @@ func titleWords(t spotify.Track) []string {
 }
 
 // tokenCoverage is the share of want found in have, comparing with
-// textnorm.WordMatch so "ni**as" finds "niggas".
+// textnorm.WordMatch so "ni**as" finds "niggas". Words split differently
+// still match either way: "1Train" finds "1 Train", and "1 Train" finds
+// "1Train".
 func tokenCoverage(want, have []string) float64 {
 	if len(want) == 0 {
 		return 0
 	}
+	have = withJoins(have)
+	found := func(w string) bool {
+		return slices.ContainsFunc(have, func(h string) bool { return textnorm.WordMatch(w, h) })
+	}
 	hit := 0
-	for _, w := range want {
-		if slices.ContainsFunc(have, func(h string) bool { return textnorm.WordMatch(w, h) }) {
+	for i := 0; i < len(want); i++ {
+		switch {
+		case found(want[i]):
 			hit++
+		case i+1 < len(want) && found(want[i]+want[i+1]):
+			hit += 2
+			i++
 		}
 	}
 	return float64(hit) / float64(len(want))
 }
 
-// artistMatch returns 1 if the primary artist is fully named in tokens, 2 if
-// only a featured artist is, 0 if none is.
-func artistMatch(artists []string, tokens []string) int {
+// withJoins returns words plus each pair and triple of neighbouring words
+// run together.
+func withJoins(words []string) []string {
+	out := slices.Clone(words)
+	for i := range words {
+		if i+1 < len(words) {
+			out = append(out, words[i]+words[i+1])
+		}
+		if i+2 < len(words) {
+			out = append(out, words[i]+words[i+1]+words[i+2])
+		}
+	}
+	return out
+}
+
+// minHandleName is the shortest artist name found run together at the start
+// of a channel name; shorter ones ("Ye", "SZA") would match unrelated
+// channels.
+const minHandleName = 5
+
+// artistMatch returns 1 if the primary artist is fully named in tokens or
+// opens the channel name as one word ("ASAPROCKYUPTOWN" for A$AP Rocky), 2
+// if only a featured artist is, 0 if none is.
+func artistMatch(artists []string, tokens []string, channel string) int {
+	handle := textnorm.Compact(channel)
 	for i, a := range artists {
 		at := textnorm.Tokens(a)
-		if len(at) > 0 && tokenCoverage(at, tokens) == 1 {
+		name := strings.Join(at, "")
+		named := len(at) > 0 && tokenCoverage(at, tokens) == 1
+		if !named && len(name) >= minHandleName && strings.HasPrefix(handle, name) {
+			named = true
+		}
+		if named {
 			if i == 0 {
 				return 1
 			}

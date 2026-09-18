@@ -35,7 +35,8 @@ func Variants(title, reference string) []string {
 }
 
 // Norm lowercases s, folds accents off Latin letters ("JAŸ-Z" → "jay z",
-// "Beyoncé" → "beyonce") and turns punctuation into single spaces.
+// "Beyoncé" → "beyonce"), reads a "$" in a name as "s" ("A$AP" → "asap")
+// and turns punctuation into single spaces.
 func Norm(s string) string {
 	return strings.Join(words(s, false), " ")
 }
@@ -109,7 +110,42 @@ func glob(pattern, s string) bool {
 	return true
 }
 
+// dollarAsS spells a "$" that touches a letter as "s": artists write their
+// names with one ("A$AP Rocky", "Joey Bada$$", "Ty Dolla $ign") and uploads
+// often spell it out ("ASAP Rocky", "Joey Badass"). A "$" by digits, as in
+// "$100", stays punctuation.
+func dollarAsS(s string) string {
+	if !strings.Contains(s, "$") {
+		return s
+	}
+	r := []rune(s)
+	for i := 0; i < len(r); {
+		if r[i] != '$' {
+			i++
+			continue
+		}
+		j := i
+		for j < len(r) && r[j] == '$' {
+			j++
+		}
+		if (i > 0 && unicode.IsLetter(r[i-1])) || (j < len(r) && unicode.IsLetter(r[j])) {
+			for k := i; k < j; k++ {
+				r[k] = 's'
+			}
+		}
+		i = j
+	}
+	return string(r)
+}
+
+// Compact is s's words run together, "ASAP Rocky" → "asaprocky", for
+// matching names written without spaces, such as channel handles.
+func Compact(s string) string {
+	return strings.Join(Tokens(s), "")
+}
+
 func words(s string, keepStars bool) []string {
+	s = dollarAsS(s)
 	var out []string
 	var w strings.Builder
 	flush := func() {
