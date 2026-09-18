@@ -15,16 +15,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sumdahl/spotify-dl/internal/audio"
-	"github.com/sumdahl/spotify-dl/internal/config"
-	"github.com/sumdahl/spotify-dl/internal/deezer"
-	"github.com/sumdahl/spotify-dl/internal/download"
-	"github.com/sumdahl/spotify-dl/internal/index"
-	"github.com/sumdahl/spotify-dl/internal/library"
-	"github.com/sumdahl/spotify-dl/internal/pipeline"
-	"github.com/sumdahl/spotify-dl/internal/spotify"
-	"github.com/sumdahl/spotify-dl/internal/youtube"
-	"github.com/sumdahl/spotify-dl/internal/ytdlp"
+	"github.com/sumdahl/geet/internal/audio"
+	"github.com/sumdahl/geet/internal/config"
+	"github.com/sumdahl/geet/internal/deezer"
+	"github.com/sumdahl/geet/internal/download"
+	"github.com/sumdahl/geet/internal/index"
+	"github.com/sumdahl/geet/internal/library"
+	"github.com/sumdahl/geet/internal/pipeline"
+	"github.com/sumdahl/geet/internal/spotify"
+	"github.com/sumdahl/geet/internal/youtube"
+	"github.com/sumdahl/geet/internal/ytdlp"
 )
 
 // event is one NDJSON line of the --json contract (docs/03-communication-
@@ -96,7 +96,7 @@ func (r *reporter) fatal(err error) int {
 		r.json.Encode(event{Stage: "failed", Error: err.Error(), Fatal: true})
 	}
 	r.mu.Unlock()
-	fmt.Fprintf(r.ui.writer(), "spotify-dl: %v\n", err)
+	fmt.Fprintf(r.ui.writer(), "geet: %v\n", err)
 	return exitFatal
 }
 
@@ -189,7 +189,7 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return rep.fatal(err)
 	}
-	if d.work, err = os.MkdirTemp(root, ".spotify-dl-"); err != nil {
+	if d.work, err = os.MkdirTemp(root, ".geet-"); err != nil {
 		return rep.fatal(err)
 	}
 	defer os.RemoveAll(d.work)

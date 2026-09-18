@@ -1,4 +1,4 @@
-// Package index remembers every file spotify-dl has saved, by Spotify track
+// Package index remembers every file geet has saved, by Spotify track
 // ID and ISRC, so a song that turns up again (in another playlist, or on
 // both an album and a single) is linked or copied instead of downloaded
 // twice.
@@ -42,7 +42,7 @@ func key(id, ext string) string {
 	return id + "." + strings.ToLower(strings.TrimPrefix(ext, "."))
 }
 
-// DefaultPath is $XDG_DATA_HOME/spotify-dl/index.json.
+// DefaultPath is $XDG_DATA_HOME/geet/index.json.
 func DefaultPath() (string, error) {
 	dir := os.Getenv("XDG_DATA_HOME")
 	if dir == "" {
@@ -52,7 +52,7 @@ func DefaultPath() (string, error) {
 		}
 		dir = filepath.Join(home, ".local", "share")
 	}
-	return filepath.Join(dir, "spotify-dl", "index.json"), nil
+	return filepath.Join(dir, "geet", "index.json"), nil
 }
 
 // Open loads the index at path. fresh reports that no index existed yet, so
@@ -176,7 +176,7 @@ func (x *Index) Save() error {
 
 var audioExts = map[string]bool{".opus": true, ".mp3": true, ".flac": true}
 
-// Scan adds every audio file under root that spotify-dl tagged (its comment
+// Scan adds every audio file under root that geet tagged (its comment
 // is the track's Spotify URL), reading tags with ffprobe. It's for building
 // the index from a library downloaded before the index existed. onProgress,
 // if set, gets files done and the total.
@@ -190,7 +190,7 @@ func (x *Index) Scan(ctx context.Context, ffprobe, root string, onProgress func(
 			return nil // unreadable subtree: skip it, don't fail the run
 		}
 		if d.IsDir() && strings.HasPrefix(d.Name(), ".") && p != root {
-			return filepath.SkipDir // our own .spotify-dl-* work dirs, hidden dirs
+			return filepath.SkipDir // our own .geet-* work dirs, hidden dirs
 		}
 		if !d.IsDir() && audioExts[strings.ToLower(filepath.Ext(p))] {
 			files = append(files, p)
@@ -266,7 +266,7 @@ func Place(src, dest string, copyOnly bool) (linked bool, err error) {
 		return false, err
 	}
 	defer in.Close()
-	tmp, err := os.CreateTemp(filepath.Dir(dest), ".spotify-dl-copy-*")
+	tmp, err := os.CreateTemp(filepath.Dir(dest), ".geet-copy-*")
 	if err != nil {
 		return false, err
 	}

@@ -25,7 +25,7 @@ func TestLoad(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
 	defaults := Default()
 	defaults.Output = filepath.Join(home, "Music")
-	defaults.IndexPath = filepath.Join(home, "data", "spotify-dl", "index.json")
+	defaults.IndexPath = filepath.Join(home, "data", "geet", "index.json")
 
 	tests := []struct {
 		name    string
@@ -62,7 +62,7 @@ client_secret = "secret"
 		{
 			name:  "env beats file, flag beats env",
 			body:  "jobs = 2\nformat = \"flac\"\n",
-			env:   map[string]string{"SPOTIFY_DL_JOBS": "3", "SPOTIFY_DL_FORMAT": "mp3", "SPOTIFY_DL_YOUTUBE_SEARCH_RESULTS": "9", "SPOTIFY_DL_OVERWRITE": "1"},
+			env:   map[string]string{"GEET_JOBS": "3", "GEET_FORMAT": "mp3", "GEET_YOUTUBE_SEARCH_RESULTS": "9", "GEET_OVERWRITE": "1"},
 			flags: map[string]string{"jobs": "5", "youtube.extra_args": "--proxy socks5://x", "playlist_folder": "false"},
 			want: func(c *Config) {
 				c.Jobs = 5
@@ -81,8 +81,8 @@ client_secret = "secret"
 		{name: "bad progress", flags: map[string]string{"progress": "sometimes"}, wantErr: ErrInvalid},
 		{name: "unknown format", body: "format = \"wav\"\n", wantErr: ErrInvalid},
 		{name: "bad bitrate", flags: map[string]string{"bitrate": "loud"}, wantErr: ErrInvalid},
-		{name: "bad bool from env", env: map[string]string{"SPOTIFY_DL_OVERWRITE": "sometimes"}, wantErr: ErrInvalid},
-		{name: "bad int from env", env: map[string]string{"SPOTIFY_DL_JOBS": "many"}, wantErr: ErrInvalid},
+		{name: "bad bool from env", env: map[string]string{"GEET_OVERWRITE": "sometimes"}, wantErr: ErrInvalid},
+		{name: "bad int from env", env: map[string]string{"GEET_JOBS": "many"}, wantErr: ErrInvalid},
 		{name: "bad duration", flags: map[string]string{"youtube.max_duration_diff": "10"}, wantErr: ErrInvalid},
 		{name: "bad template", flags: map[string]string{"output_template": "{artist}/{album}"}, wantErr: ErrInvalid},
 		{name: "query without title", flags: map[string]string{"youtube.search_query": "{artists}"}, wantErr: ErrInvalid},
@@ -139,7 +139,7 @@ func TestSettingNames(t *testing.T) {
 			seen[name] = true
 		}
 	}
-	for _, want := range []string{"resolve-jobs", "SPOTIFY_DL_RESOLVE_JOBS", "youtube-max-duration-diff", "SPOTIFY_DL_TOOLS_YT_DLP"} {
+	for _, want := range []string{"resolve-jobs", "GEET_RESOLVE_JOBS", "youtube-max-duration-diff", "GEET_TOOLS_YT_DLP"} {
 		if !seen[want] {
 			t.Errorf("missing setting name %q", want)
 		}

@@ -137,7 +137,7 @@ func TestScan(t *testing.T) {
 	opus := mk("daily-mix-1/Stan - Eminem.opus", "https://open.spotify.com/track/stanID", "ISRC", "USIR1")
 	mp3 := mk("Mask Off - Future.mp3", "https://open.spotify.com/track/maskID", "TSRC", "USSM2")
 	mk("not-ours.opus", "ripped from a CD", "", "")
-	mk(".spotify-dl-123/source.opus", "https://open.spotify.com/track/workdir", "", "")
+	mk(".geet-123/source.opus", "https://open.spotify.com/track/workdir", "", "")
 
 	idx, _, _ := Open(filepath.Join(t.TempDir(), "index.json"))
 	var last [2]int

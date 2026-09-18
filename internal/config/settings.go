@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sumdahl/spotify-dl/internal/library"
+	"github.com/sumdahl/geet/internal/library"
 )
 
 // Setting is one configurable value. Its flag and environment variable names
@@ -29,7 +29,7 @@ func (c *Config) Settings() []Setting {
 		{Key: "bitrate", Usage: `audio bitrate such as 320k; empty means best available`, ptr: &c.Bitrate},
 		{Key: "overwrite", Usage: "re-download tracks whose file already exists instead of skipping them", ptr: &c.Overwrite},
 		{Key: "duplicates", Usage: "a track already downloaded elsewhere (another playlist, or the same recording on another release): link (hard link, no extra space), copy, skip, or download again", ptr: &c.Duplicates},
-		{Key: "index_path", Usage: "file remembering every downloaded track, for duplicates (default $XDG_DATA_HOME/spotify-dl/index.json)", ptr: &c.IndexPath},
+		{Key: "index_path", Usage: "file remembering every downloaded track, for duplicates (default $XDG_DATA_HOME/geet/index.json)", ptr: &c.IndexPath},
 		{Key: "progress", Usage: "animated progress bars: auto (only in a terminal, and not with --json), always or never", ptr: &c.Progress},
 		{Key: "download_retries", Usage: "extra attempts when a YouTube download fails (it is often a temporary 403 or throttling)", ptr: &c.DownloadRetries},
 		{Key: "jobs", Usage: "concurrent downloads", ptr: &c.Jobs},
@@ -54,7 +54,7 @@ func (s Setting) Flag() string {
 }
 
 func (s Setting) Env() string {
-	return "SPOTIFY_DL_" + strings.ToUpper(strings.ReplaceAll(s.Key, ".", "_"))
+	return "GEET_" + strings.ToUpper(strings.ReplaceAll(s.Key, ".", "_"))
 }
 
 func (s Setting) Set(raw string) error {

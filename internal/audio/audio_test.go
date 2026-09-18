@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sumdahl/spotify-dl/internal/spotify"
+	"github.com/sumdahl/geet/internal/spotify"
 )
 
 func requireTools(t *testing.T) {

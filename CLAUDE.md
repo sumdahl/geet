@@ -13,7 +13,7 @@ The user's Spotify account is free, and the Web API needs Premium, so there are 
   - Playlists cap at 100 tracks.
   - Album tracks are numbered by position.
   - `internal/deezer` then fills in ISRC and disc/track numbers, best effort. A Deezer failure only logs a warning.
-- **Official API:** `spotify.API` is used only when the config has credentials, via `cmd/spotify-dl` `resolve()`.
+- **Official API:** `spotify.API` is used only when the config has credentials, via `cmd/geet` `resolve()`.
 - Both sources return `spotify.Track`.
 - Deezer search is geo-filtered. From Nepal it hides roughly 30% of major-label tracks, even though `/track/isrc:{isrc}` finds them. Missing ISRCs are therefore expected and not a matching bug.
 - Scraped pages break silently when Spotify changes its markup. Parsing failures wrap `spotify.ErrPageFormat`. When one fires, fetch the live page and update both the parser and the fixtures in `internal/spotify/testdata`.
@@ -28,12 +28,12 @@ A Go CLI that takes a Spotify track, album or playlist URL, gets its metadata (s
 ## Architecture rules (non-negotiable)
 
 - **Never reimplement YouTube extraction.** Shell out to the `yt-dlp` binary for search and download, and to `ffmpeg` for transcoding and embedding cover art. Go handles metadata resolution, match scoring, orchestration, concurrency and the CLI.
-- **The engine has no Omarchy dependency.** `spotify-dl` must work the same from any terminal on any Linux box. The Omarchy/Quickshell plugin (`omarchy-plugin-spotify-dl`, a separate repo built later) only runs this binary and reads its NDJSON output. It never imports engine internals.
+- **The engine has no Omarchy dependency.** `geet` must work the same from any terminal on any Linux box. The Omarchy/Quickshell plugin (`omarchy-plugin-geet`, a separate repo built later) only runs this binary and reads its NDJSON output. It never imports engine internals.
 
 ## Layout
 
 - `internal/config`: the engine is a backend for the Omarchy plugin, so everything is configurable.
-  - `Config.Settings()` is the single list: each entry is automatically a TOML key, a `--flag` and a `SPOTIFY_DL_*` env variable (precedence flag > env > file > default), and is listed by `spotify-dl config settings --json`.
+  - `Config.Settings()` is the single list: each entry is automatically a TOML key, a `--flag` and a `GEET_*` env variable (precedence flag > env > file > default), and is listed by `geet config settings --json`.
   - To add a setting, add the struct field and one `Settings()` entry. `TestSettingsCoverConfig` fails if you forget the entry.
   - The config file is optional. Unknown keys in it are an error.
 - `internal/spotify` and `internal/deezer`: built. See "Metadata sources".
@@ -49,16 +49,16 @@ A Go CLI that takes a Spotify track, album or playlist URL, gets its metadata (s
 - `internal/ytdlp`: the shared yt-dlp runner (cookies and extra args), used by both search and download.
 - `internal/download`: fetches the raw best audio only. It deliberately avoids `--extract-audio`, which ignores the requested bitrate when the codecs match.
 - `internal/audio`: one ffmpeg pass that converts or copies, tags and embeds the cover (see docs/01 §4 for the opus cover and argument-length details). Its round-trip tests run real ffmpeg on a generated tone and skip when ffmpeg is missing.
-- `cmd/spotify-dl/download.go`: the per-track stages and the NDJSON `event` type. Only ever add event fields; docs/03 has the schema.
+- `cmd/geet/download.go`: the per-track stages and the NDJSON `event` type. Only ever add event fields; docs/03 has the schema.
 - Before downloads start, resolving a playlist is slow (about 1s of page reads per track, then the Deezer lookups). `resolveMetadata` reports both steps, which drive `ui.phase` lines and NDJSON `reading` events.
 - Downloads retry `download_retries` times (default 2), because YouTube fails transiently (403s, throttling). yt-dlp errors lead with yt-dlp's own reason so it survives truncation in the display.
-- `cmd/spotify-dl/ui.go`: the stderr display, using mpb bars (`barUI`) in a terminal and plain lines (`plainUI`) otherwise.
+- `cmd/geet/ui.go`: the stderr display, using mpb bars (`barUI`) in a terminal and plain lines (`plainUI`) otherwise.
   - A finished track's bar is removed and a permanent result line is logged above the live area, because mpb never draws a bar that completes before its first refresh.
   - Never call into a `*mpb.Bar` while holding `barTrack.mu`: the render goroutine takes that lock in `status`.
   - To test the animation headlessly, the pty needs a size: `script -qefc "stty cols 150 rows 40; <cmd>" /dev/null`. With 0 rows mpb draws nothing.
-- `cmd/spotify-dl`: the subcommands `download <url>` and `watch`. `watch` is a daemon that polls `wl-paste` (Wayland, not xclip) about once a second and sends a `notify-send` notification with the cover art. Flags: `--format --output --bitrate --jobs --resolve-jobs --json`.
+- `cmd/geet`: the subcommands `download <url>` and `watch`. `watch` is a daemon that polls `wl-paste` (Wayland, not xclip) about once a second and sends a `notify-send` notification with the cover art. Flags: `--format --output --bitrate --jobs --resolve-jobs --json`.
 
-## Playlist pipeline (implemented in `internal/pipeline` and `cmd/spotify-dl/download.go`)
+## Playlist pipeline (implemented in `internal/pipeline` and `cmd/geet/download.go`)
 
 `tracks → [resolve pool] → [download pool] → [tag pool]` (see `docs/02-concurrency-pipeline.md`):
 - Resolve pool defaults to 8 workers (`--resolve-jobs`), download pool to 4 (`--jobs`). The tag pool is fixed at 2 and is not configurable.
@@ -85,7 +85,7 @@ A Go CLI that takes a Spotify track, album or playlist URL, gets its metadata (s
 - Include a tag round-trip test that writes tags and reads them back.
 - Include a pipeline cancellation test that cancels mid-flight and asserts no goroutines leak.
 - Tests must not use the live network: mock the Spotify HTTP client and stub `yt-dlp` JSON output.
-- Commands: `go test -race ./...`, a single test with `go test ./internal/spotify -run TestParseURL`, `go vet ./...`, `gofmt -l .`. Run locally with `go run ./cmd/spotify-dl download <url>` (add `-v` for debug logs).
+- Commands: `go test -race ./...`, a single test with `go test ./internal/spotify -run TestParseURL`, `go vet ./...`, `gofmt -l .`. Run locally with `go run ./cmd/geet download <url>` (add `-v` for debug logs).
 
 ## Repo-local skill
 

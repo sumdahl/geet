@@ -13,7 +13,7 @@ as a stable API even before the plugin exists.
 - Before any track starts, resolving the link emits `reading` events
   (no `track`; `step`, `index`, `total`) so a long playlist shows progress.
   Consumers must ignore stages and fields they don't know.
-- `spotify-dl download <url> --json` → one NDJSON line per track as it
+- `geet download <url> --json` → one NDJSON line per track as it
   crosses each stage: `resolved → downloading → tagging → done`, or
   `failed` at any point. A track whose file already exists goes straight to
   `done` with `"skipped": true` (unless `--overwrite`).
@@ -47,18 +47,18 @@ as a stable API even before the plugin exists.
   - `0` — all tracks succeeded
   - `1` — partial failure (some tracks failed; check the NDJSON for which)
   - `2` — fatal (bad URL, auth failure, yt-dlp/ffmpeg missing)
-- `spotify-dl watch --json` (the clipboard daemon) streams the same NDJSON
+- `geet watch --json` (the clipboard daemon) streams the same NDJSON
   shape continuously, one line per event, so a consumer can keep the
   process open and read a pipe instead of polling.
 
 ## Configuration for consumers
 The plugin configures the engine without touching its internals:
-- Per-invocation: pass flags (`--output`, `--format`, …) or `SPOTIFY_DL_*`
+- Per-invocation: pass flags (`--output`, `--format`, …) or `GEET_*`
   environment variables; both override the config file.
-- Persistent: write `~/.config/spotify-dl/config.toml` (TOML, keys as listed
-  by `spotify-dl config settings --json`).
-- Discovery: `spotify-dl config settings --json` returns an array of
+- Persistent: write `~/.config/geet/config.toml` (TOML, keys as listed
+  by `geet config settings --json`).
+- Discovery: `geet config settings --json` returns an array of
   `{"key","flag","env","type","default","value","secret","usage"}`, with
-  `type` one of `string|int|duration|list`; `spotify-dl config --json`
+  `type` one of `string|int|duration|list`; `geet config --json`
   returns the effective config as one object. Secrets come back as
   `"<redacted>"`.

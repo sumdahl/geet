@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sumdahl/spotify-dl/internal/spotify"
+	"github.com/sumdahl/geet/internal/spotify"
 )
 
 // Deezer's canned responses, keyed by path plus decoded q parameter.

@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sumdahl/spotify-dl/internal/spotify"
-	"github.com/sumdahl/spotify-dl/internal/ytdlp"
+	"github.com/sumdahl/geet/internal/spotify"
+	"github.com/sumdahl/geet/internal/ytdlp"
 )
 
 var ErrNoMatch = errors.New("no YouTube result matched")

@@ -1,5 +1,5 @@
 // Package config holds every engine setting. Each one can come from the TOML
-// file, a SPOTIFY_DL_* environment variable or a command-line flag (in
+// file, a GEET_* environment variable or a command-line flag (in
 // increasing precedence); see Settings for the single list all three derive
 // from.
 package config
@@ -17,8 +17,8 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/sumdahl/spotify-dl/internal/index"
-	"github.com/sumdahl/spotify-dl/internal/library"
+	"github.com/sumdahl/geet/internal/index"
+	"github.com/sumdahl/geet/internal/library"
 )
 
 var ErrInvalid = errors.New("invalid config")
@@ -110,19 +110,19 @@ func Default() Config {
 	}
 }
 
-// DefaultPath is $SPOTIFY_DL_CONFIG if set, else the XDG config location.
+// DefaultPath is $GEET_CONFIG if set, else the XDG config location.
 func DefaultPath() (string, error) {
-	if p := os.Getenv("SPOTIFY_DL_CONFIG"); p != "" {
+	if p := os.Getenv("GEET_CONFIG"); p != "" {
 		return p, nil
 	}
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("locating config dir: %w", err)
 	}
-	return filepath.Join(dir, "spotify-dl", "config.toml"), nil
+	return filepath.Join(dir, "geet", "config.toml"), nil
 }
 
-// Load layers defaults, the file at path (missing is fine), SPOTIFY_DL_*
+// Load layers defaults, the file at path (missing is fine), GEET_*
 // environment variables and then flags, given as raw values keyed by
 // setting key.
 func Load(path string, flags map[string]string) (Config, error) {

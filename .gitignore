@@ -1,5 +1,5 @@
 # Build output
-/spotify-dl
+/geet
 /dist/
 *.exe
 *.test
@@ -11,7 +11,7 @@ coverage.*
 cover.html
 
 # Work directories the engine leaves only if killed with SIGKILL
-.spotify-dl-*/
+.geet-*/
 
 # Downloaded audio never belongs in the repo
 *.opus

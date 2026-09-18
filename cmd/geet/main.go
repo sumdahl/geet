@@ -15,9 +15,9 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/sumdahl/spotify-dl/internal/config"
-	"github.com/sumdahl/spotify-dl/internal/deezer"
-	"github.com/sumdahl/spotify-dl/internal/spotify"
+	"github.com/sumdahl/geet/internal/config"
+	"github.com/sumdahl/geet/internal/deezer"
+	"github.com/sumdahl/geet/internal/spotify"
 )
 
 const (
@@ -29,7 +29,7 @@ const (
 // Set at build time: go build -ldflags "-X main.version=v0.1.0".
 var version = "dev"
 
-const usage = `usage: spotify-dl <command> [flags]
+const usage = `usage: geet <command> [flags]
 
 commands:
   download <spotify-url>   download a track, album or playlist
@@ -39,9 +39,9 @@ commands:
   config settings          list every setting with its flag and env variable
   version                  print the version
 
-Every setting can be given as a flag, a SPOTIFY_DL_* environment variable or
+Every setting can be given as a flag, a GEET_* environment variable or
 a key in the config file, in that order of precedence.
-Run "spotify-dl <command> -h" for flags.
+Run "geet <command> -h" for flags.
 `
 
 func main() {
@@ -62,7 +62,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "config":
 		return configCmd(args[1:], stdout, stderr)
 	case "watch":
-		fmt.Fprintln(stderr, "spotify-dl: watch is not implemented yet")
+		fmt.Fprintln(stderr, "geet: watch is not implemented yet")
 		return exitFatal
 	case "version", "--version":
 		fmt.Fprintln(stdout, version)
@@ -71,7 +71,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stdout, usage)
 		return exitOK
 	default:
-		fmt.Fprintf(stderr, "spotify-dl: unknown command %q\n\n%s", args[0], usage)
+		fmt.Fprintf(stderr, "geet: unknown command %q\n\n%s", args[0], usage)
 		return exitFatal
 	}
 }
@@ -89,10 +89,10 @@ func newCLI(name, synopsis string, stderr io.Writer) *cli {
 	c := &cli{fs: flag.NewFlagSet(name, flag.ContinueOnError), overrides: map[string]string{}}
 	c.fs.SetOutput(stderr)
 	c.fs.Usage = func() {
-		fmt.Fprintf(stderr, "usage: spotify-dl %s\n\nflags:\n", synopsis)
+		fmt.Fprintf(stderr, "usage: geet %s\n\nflags:\n", synopsis)
 		c.fs.PrintDefaults()
 	}
-	c.fs.StringVar(&c.configPath, "config", "", "config file (default $SPOTIFY_DL_CONFIG or $XDG_CONFIG_HOME/spotify-dl/config.toml)")
+	c.fs.StringVar(&c.configPath, "config", "", "config file (default $GEET_CONFIG or $XDG_CONFIG_HOME/geet/config.toml)")
 	c.fs.BoolVar(&c.json, "json", false, "machine-readable output on stdout")
 	c.fs.BoolVar(&c.verbose, "v", false, "verbose (debug) logging")
 
@@ -206,7 +206,7 @@ func configCmd(args []string, stdout, stderr io.Writer) int {
 	}
 	cfg, path, err := c.load()
 	if err != nil {
-		fmt.Fprintf(stderr, "spotify-dl: %v\n", err)
+		fmt.Fprintf(stderr, "geet: %v\n", err)
 		return exitFatal
 	}
 
@@ -231,11 +231,11 @@ func configCmd(args []string, stdout, stderr io.Writer) int {
 	case "settings":
 		err = printSettings(stdout, cfg, c.json)
 	default:
-		fmt.Fprintf(stderr, "spotify-dl: unknown config subcommand %q\n", sub)
+		fmt.Fprintf(stderr, "geet: unknown config subcommand %q\n", sub)
 		return exitFatal
 	}
 	if err != nil {
-		fmt.Fprintf(stderr, "spotify-dl: %v\n", err)
+		fmt.Fprintf(stderr, "geet: %v\n", err)
 		return exitFatal
 	}
 	return exitOK

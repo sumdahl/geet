@@ -14,7 +14,7 @@ to copy a link.
 - Show a lightweight, non-blocking prompt/OSD: "Download {artist} -
   {title}?" with accept/dismiss — it fires on every track change, not just
   ones the user wants saved, so it must be easy to ignore.
-- On accept, plugin invokes `spotify-dl download <spotify-url> --json`
+- On accept, plugin invokes `geet download <spotify-url> --json`
   exactly as the manual/clipboard path does — same engine, same NDJSON
   contract, no new engine functionality needed. This is the payoff of the
   engine/plugin split: v2 is a pure plugin-side feature.

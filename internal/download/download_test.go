@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sumdahl/spotify-dl/internal/ytdlp"
+	"github.com/sumdahl/geet/internal/ytdlp"
 )
 
 func TestFetch(t *testing.T) {
@@ -19,9 +19,9 @@ func TestFetch(t *testing.T) {
 	// --print template's fields.
 	script := `#!/bin/sh
 printf '%s\n' "$@" > "` + args + `"
-echo "SPOTIFY-DL-PROGRESS 1024 4096 NA"
-echo "SPOTIFY-DL-PROGRESS 2048 NA 4100.5"
-echo "SPOTIFY-DL-PROGRESS 4096 4096 NA"
+echo "GEET-PROGRESS 1024 4096 NA"
+echo "GEET-PROGRESS 2048 NA 4100.5"
+echo "GEET-PROGRESS 4096 4096 NA"
 printf '%s\topus\t152.303\n' "` + filepath.Join(dir, "source.webm") + `"
 `
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
@@ -48,7 +48,7 @@ printf '%s\topus\t152.303\n' "` + filepath.Join(dir, "source.webm") + `"
 		"--format", "bestaudio[acodec=opus]/bestaudio",
 		"--no-playlist", "--no-warnings",
 		"--progress", "--newline",
-		"--progress-template", "download:SPOTIFY-DL-PROGRESS %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s",
+		"--progress-template", "download:GEET-PROGRESS %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s",
 		"--output", filepath.Join(dir, "source.%(ext)s"),
 		"--print", "after_move:%(filepath)s\t%(acodec)s\t%(abr)s",
 		"--", "https://www.youtube.com/watch?v=abc",

@@ -1,4 +1,4 @@
-# spotify-dl — Project Overview
+# geet — Project Overview
 
 ## Goal
 Given a Spotify track/album/playlist URL, fetch accurate metadata from
@@ -20,7 +20,7 @@ its Omarchy/Quickshell (Omarchy 4 "Quattro") plugin integration.
    orchestration, concurrency, CLI/UX, and (later) Omarchy integration — not
    video extraction.
 
-2. **Engine first, plugin is a thin client.** Build `spotify-dl` as a fully
+2. **Engine first, plugin is a thin client.** Build `geet` as a fully
    standalone, general-purpose CLI binary with zero Omarchy/Quickshell
    dependencies — it must work identically from any terminal on any Linux
    box. The Omarchy plugin is a separate, later layer that only shells out
@@ -29,9 +29,9 @@ its Omarchy/Quickshell (Omarchy 4 "Quattro") plugin integration.
 
 ## Repos / directories
 
-- **Engine**: `spotify-dl/` — no `omarchy-` prefix, since it has no Omarchy
-  dependency. GitHub: `sumdahl/spotify-dl`. Local: `~/personal/spotify-dl`.
-- **Plugin** (built later, v1): `omarchy-plugin-spotify-dl/` — matches the
+- **Engine**: `geet/` — no `omarchy-` prefix, since it has no Omarchy
+  dependency. GitHub: `sumdahl/geet`. Local: `~/personal/geet`.
+- **Plugin** (built later, v1): `omarchy-plugin-geet/` — matches the
   naming of the existing `omarchy-plugin-nepse` / `omarchy-plugin-media`
   repos. Separate repo.
 - Decide monorepo vs. permanently-separate repos once the plugin work

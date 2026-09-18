@@ -6,7 +6,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/sumdahl/spotify-dl/internal/spotify"
+	"github.com/sumdahl/geet/internal/spotify"
 )
 
 func TestPath(t *testing.T) {

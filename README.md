@@ -1,8 +1,8 @@
-# spotify-dl
+# geet
 
-Download Spotify tracks, albums and playlists as tagged audio files.
+*geet* (गीत) is Nepali and Hindi for "song". It downloads Spotify tracks, albums and playlists as tagged audio files.
 
-`spotify-dl` reads a link's metadata from Spotify, finds the matching upload on YouTube, downloads it with `yt-dlp`, and uses `ffmpeg` to convert it, tag it and embed the album cover. A 50-track playlist takes about a minute.
+`geet` reads a link's metadata from Spotify, finds the matching upload on YouTube, downloads it with `yt-dlp`, and uses `ffmpeg` to convert it, tag it and embed the album cover. A 50-track playlist takes about a minute.
 
 - **No Spotify account or API keys needed.** Metadata comes from Spotify's public pages. The official Web API (which needs Premium) is used only if you configure credentials.
 - **Careful matching.** It avoids live versions, covers, remixes and sped-up uploads, and videos with long intros. It handles censored titles (`Ni**as`), accented names (`JAŸ-Z`) and non-Latin scripts.
@@ -13,7 +13,7 @@ Download Spotify tracks, albums and playlists as tagged audio files.
 - **Scriptable.** `--json` streams NDJSON progress events. Every setting is a config key, a flag and an environment variable. It's built to be the backend of an [Omarchy](https://omarchy.org) desktop plugin.
 
 ```
-$ spotify-dl download "https://open.spotify.com/playlist/37i9dQZF1E38GaNXgXwvL4"
+$ geet download "https://open.spotify.com/playlist/37i9dQZF1E38GaNXgXwvL4"
 playlist "Daily Mix 1": 50 track(s) → /home/you/Music/daily-mix-1
 [ 1/50] Kendrick Lamar - Hood Politics             ✓ saved
 [ 3/50] Post Malone - Circles                      ⧉ linked from todays-top-hits (no download)
@@ -35,21 +35,21 @@ sudo pacman -S yt-dlp ffmpeg        # Arch / Omarchy
 ## Install
 
 ```sh
-git clone https://github.com/sumdahl/spotify-dl
-cd spotify-dl
-go install ./cmd/spotify-dl         # installs to $(go env GOPATH)/bin
+git clone https://github.com/sumdahl/geet
+cd geet
+go install ./cmd/geet         # installs to $(go env GOPATH)/bin
 ```
 
-Or run from the source tree without installing: `go run ./cmd/spotify-dl download <url>`.
+Or run from the source tree without installing: `go run ./cmd/geet download <url>`.
 
 ## Usage
 
 ```sh
-spotify-dl download <spotify-url>        # a track, album or playlist
-spotify-dl config                        # effective configuration (TOML; --json for JSON)
-spotify-dl config path                   # where the config file lives
-spotify-dl config settings               # every setting with its flag and env variable
-spotify-dl version
+geet download <spotify-url>        # a track, album or playlist
+geet config                        # effective configuration (TOML; --json for JSON)
+geet config path                   # where the config file lives
+geet config settings               # every setting with its flag and env variable
+geet version
 ```
 
 Accepted links:
@@ -61,11 +61,11 @@ Share links from the Spotify app work as copied. Artist links aren't supported.
 Examples:
 
 ```sh
-spotify-dl download "<url>" --format mp3 --bitrate 320k    # MP3 for devices without Opus
-spotify-dl download "<url>" --output ~/Downloads/music     # somewhere other than ~/Music
-spotify-dl download "<url>" --jobs 8                       # more parallel downloads
-spotify-dl download "<url>" --json 2>/dev/null | jq .      # machine-readable progress
-spotify-dl download "<url>" -v                             # debug logs, including every YouTube candidate's score
+geet download "<url>" --format mp3 --bitrate 320k    # MP3 for devices without Opus
+geet download "<url>" --output ~/Downloads/music     # somewhere other than ~/Music
+geet download "<url>" --jobs 8                       # more parallel downloads
+geet download "<url>" --json 2>/dev/null | jq .      # machine-readable progress
+geet download "<url>" -v                             # debug logs, including every YouTube candidate's score
 ```
 
 Exit codes: `0` all tracks succeeded, `1` some failed (the others were saved), `2` fatal (bad link, missing tool, interrupted).
@@ -98,8 +98,8 @@ YouTube's best audio is about 130–160 kbps Opus (256 kbps AAC with YouTube Pre
 Every setting can be given in three ways. When the same setting is set in more than one place, the flag wins over the environment variable, which wins over the config file:
 
 1. **Flag:** `--youtube-search-results 8`
-2. **Environment variable:** `SPOTIFY_DL_YOUTUBE_SEARCH_RESULTS=8`
-3. **Config file:** `~/.config/spotify-dl/config.toml` (or `$SPOTIFY_DL_CONFIG`, or `--config`). The file is optional, and an unknown key in it is an error.
+2. **Environment variable:** `GEET_YOUTUBE_SEARCH_RESULTS=8`
+3. **Config file:** `~/.config/geet/config.toml` (or `$GEET_CONFIG`, or `--config`). The file is optional, and an unknown key in it is an error.
 
 ```toml
 output = "~/Music"
@@ -125,7 +125,7 @@ client_secret = "..."
 | `bitrate` | `--bitrate` | string | *(best)* | e.g. `320k` |
 | `overwrite` | `--overwrite` | bool | `false` | Re-download tracks whose file already exists |
 | `duplicates` | `--duplicates` | string | `link` | A track already downloaded elsewhere: `link` (hard link), `copy`, `skip` or `download` |
-| `index_path` | `--index-path` | string | `$XDG_DATA_HOME/spotify-dl/index.json` | The download index used for duplicates |
+| `index_path` | `--index-path` | string | `$XDG_DATA_HOME/geet/index.json` | The download index used for duplicates |
 | `progress` | `--progress` | string | `auto` | Animated bars: `auto` (in a terminal, not with `--json`), `always` or `never` |
 | `download_retries` | `--download-retries` | int | `2` | Extra attempts when YouTube refuses a download |
 | `jobs` | `--jobs` | int | `4` | Parallel downloads |
@@ -143,7 +143,7 @@ client_secret = "..."
 | `tools.ffmpeg` | `--tools-ffmpeg` | string | `ffmpeg` | |
 | `tools.ffprobe` | `--tools-ffprobe` | string | `ffprobe` | |
 
-`spotify-dl config settings --json` prints this table as JSON (key, flag, env variable, type, default, current value, description), so tools can build a settings UI without hard-coding it.
+`geet config settings --json` prints this table as JSON (key, flag, env variable, type, default, current value, description), so tools can build a settings UI without hard-coding it.
 
 ## JSON output
 
@@ -166,7 +166,7 @@ With `--json`, stdout carries only NDJSON: one event per line, as each track mov
 ### Data flow
 
 ```
-                       spotify-dl download <url>
+                       geet download <url>
                                   │
                         spotify.ParseURL(url)
                                   │
@@ -200,8 +200,8 @@ With `--json`, stdout carries only NDJSON: one event per line, as each track mov
 
 | Package | Role |
 |---|---|
-| `cmd/spotify-dl` | CLI: subcommands, flags generated from the settings list, the per-track stages (`download.go`), the stderr display (`ui.go`) |
-| `internal/config` | Settings, defined once in `Config.Settings()`. Each becomes a TOML key, a `--flag` and a `SPOTIFY_DL_*` variable, and is validated. |
+| `cmd/geet` | CLI: subcommands, flags generated from the settings list, the per-track stages (`download.go`), the stderr display (`ui.go`) |
+| `internal/config` | Settings, defined once in `Config.Settings()`. Each becomes a TOML key, a `--flag` and a `GEET_*` variable, and is validated. |
 | `internal/spotify` | Link parsing. `Web` scrapes the public pages (keyless); `API` uses the official Web API. Both return a `Collection`. |
 | `internal/deezer` | Fills in what the public pages lack (ISRC, disc and track numbers) from Deezer's keyless API. Best effort: album match first, then per-track search. |
 | `internal/youtube` | Builds the query and scores candidates from yt-dlp's flat search. Keeps every candidate's score or rejection reason for debugging. |

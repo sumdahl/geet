@@ -1,4 +1,4 @@
-module github.com/sumdahl/spotify-dl
+module github.com/sumdahl/geet
 
 go 1.27.1
 

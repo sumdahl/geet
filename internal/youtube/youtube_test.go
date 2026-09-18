@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sumdahl/spotify-dl/internal/spotify"
-	"github.com/sumdahl/spotify-dl/internal/ytdlp"
+	"github.com/sumdahl/geet/internal/spotify"
+	"github.com/sumdahl/geet/internal/ytdlp"
 )
 
 const maxDiff = 10 * time.Second

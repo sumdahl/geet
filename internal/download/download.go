@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sumdahl/spotify-dl/internal/ytdlp"
+	"github.com/sumdahl/geet/internal/ytdlp"
 )
 
 // Source is the downloaded stream, with what YouTube reports about it.
@@ -24,7 +24,7 @@ type Source struct {
 
 // progressPrefix marks yt-dlp's progress lines on stdout, where the final
 // --print line also goes.
-const progressPrefix = "SPOTIFY-DL-PROGRESS "
+const progressPrefix = "GEET-PROGRESS "
 
 // Fetch downloads url's best audio into dir. Opus is preferred: it is
 // YouTube's highest-quality audio (~150 kbps) and can be kept without

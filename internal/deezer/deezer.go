@@ -18,8 +18,8 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/sumdahl/spotify-dl/internal/spotify"
-	"github.com/sumdahl/spotify-dl/internal/textnorm"
+	"github.com/sumdahl/geet/internal/spotify"
+	"github.com/sumdahl/geet/internal/textnorm"
 )
 
 const (

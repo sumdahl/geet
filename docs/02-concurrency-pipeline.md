@@ -39,7 +39,7 @@ limits it — not one goroutine-per-track for the whole job:
   item; an error the caller marks fatal (missing yt-dlp/ffmpeg) or Ctrl+C
   stops everything. `pipeline_test.go` covers routing, per-stage bounds,
   fatal stop, and a mid-flight cancel with zero leaked goroutines.
-- Stages in `cmd/spotify-dl/download.go`: **resolve** (skip existing →
+- Stages in `cmd/geet/download.go`: **resolve** (skip existing →
   Deezer tags → duplicate link → YouTube search), **download** (retries),
   **tag** (fixed 2; encode, rename into place, index).
 - Before the pipeline, reading a playlist from Spotify's pages is itself

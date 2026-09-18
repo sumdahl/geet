@@ -17,7 +17,7 @@ it can't be the only path. Two sources, chosen by config:
     (±3s). Deezer geo-filters search by the caller's country, so some tracks
     (~30% of major-label hits when tested from Nepal) get no ISRC.
 - **Official API** — used when `client_id`/`client_secret` are set in
-  `~/.config/spotify-dl/config.toml`: Client Credentials flow, full metadata
+  `~/.config/geet/config.toml`: Client Credentials flow, full metadata
   including ISRC, no playlist cap, no Deezer step.
 - Both parse `spotify.com/track|album|playlist` URLs and `spotify:` URIs and
   produce the same `spotify.Track`: title, artists, album, album artist,
@@ -67,12 +67,12 @@ One ffmpeg pass per track: convert, tag, embed cover.
   PICTURE); opus as a `METADATA_BLOCK_PICTURE` tag.
 - `QualityWarning`: FLAC, or a bitrate >10% above the source, gets a
   warning (once per run on stderr, per track in NDJSON).
-- The file is encoded in a hidden `.spotify-dl-*` work dir inside `output`
+- The file is encoded in a hidden `.geet-*` work dir inside `output`
   and renamed into place, so a finished file appears atomically and Ctrl+C
   leaves nothing behind. Existing files are skipped unless `overwrite`.
 
 ## Duplicates (`internal/index`)
-- `$XDG_DATA_HOME/spotify-dl/index.json` (`index_path`) maps Spotify track
+- `$XDG_DATA_HOME/geet/index.json` (`index_path`) maps Spotify track
   ID + format → file, plus ISRC → track, updated and saved after every
   track. A track already downloaded elsewhere (another playlist; or the
   same ISRC under another ID, e.g. album vs single) is not downloaded again;
@@ -81,7 +81,7 @@ One ffmpeg pass per track: convert, tag, embed cover.
 - Only the same format counts (an mp3 request never reuses an opus).
   Entries whose file was deleted are dropped and the track downloads again.
 - First run with no index: every audio file under `output` is read with
-  ffprobe; files spotify-dl tagged (comment = Spotify track URL) are indexed.
+  ffprobe; files geet tagged (comment = Spotify track URL) are indexed.
 
 ## Output path (`internal/library`)
 - `output` (default `~/Music`) + `output_template` (default
@@ -102,23 +102,23 @@ One ffmpeg pass per track: convert, tag, embed cover.
 ## Configuration (`internal/config`)
 Every setting is defined once in `Config.Settings()` and is automatically
 available three ways, in increasing precedence:
-1. `~/.config/spotify-dl/config.toml` (or `$SPOTIFY_DL_CONFIG`, or
+1. `~/.config/geet/config.toml` (or `$GEET_CONFIG`, or
    `--config`) — optional; unknown keys are an error.
-2. Environment: `SPOTIFY_DL_<KEY>` with dots as underscores, e.g.
-   `SPOTIFY_DL_YOUTUBE_SEARCH_RESULTS=8`.
+2. Environment: `GEET_<KEY>` with dots as underscores, e.g.
+   `GEET_YOUTUBE_SEARCH_RESULTS=8`.
 3. Flags: key with dots/underscores as dashes, e.g.
    `--youtube-search-results 8`.
 
-`spotify-dl config settings` lists them all.
+`geet config settings` lists them all.
 
-## CLI (`cmd/spotify-dl`)
-- `spotify-dl download <spotify-url>` — one-shot.
-- `spotify-dl watch` — daemon: polls `wl-paste` (Wayland — not xclip/xsel)
+## CLI (`cmd/geet`)
+- `geet download <spotify-url>` — one-shot.
+- `geet watch` — daemon: polls `wl-paste` (Wayland — not xclip/xsel)
   every ~1s, detects a new Spotify URL, downloads automatically, fires
   `notify-send` with cover art on completion/failure.
-- `spotify-dl config [--json]` — effective config (secrets redacted);
+- `geet config [--json]` — effective config (secrets redacted);
   `config path [--json]`; `config settings [--json]` — every setting with
   flag, env name, type, default, current value and help, for building a
   settings UI.
-- `spotify-dl version`.
+- `geet version`.
 - Common flags: `--config`, `--json`, `-v`, plus one flag per setting.
