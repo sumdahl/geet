@@ -55,7 +55,7 @@ Linux is the target and macOS is best effort, where everything but `watch` (Wayl
   - To add a setting, add the struct field and one `Settings()` entry. `TestSettingsCoverConfig` fails if you forget the entry.
   - The config file is optional. Unknown keys in it are an error.
 - `internal/spotify` and `internal/deezer`: built. See "Metadata sources".
-- `internal/youtube`: built.
+- `internal/youtube`: built. When both queries fail, `resolveMusic` searches YouTube Music's `#songs` (flat listing, then full details for up to 3 results whose title fits). A single video's full JSON puts a media stream in `url`, so `parseCandidates` takes `webpage_url` or builds the watch URL. Songs still rejected after that (another performer's recording, a different edit) are correct rejections, not bugs.
   - `yt-dlp ytsearchN:<query> --flat-playlist --dump-json` (about 1.5s), then scoring in `score.go`, which keeps every candidate's score or rejection reason (`-v` logs them).
   - `testdata/*.ndjson` are real searches. When a live search picks wrong, capture it as a fixture and add a case to `TestBestOnRealSearches` before changing weights.
   - `testdata/fake-yt-dlp` stands in for the binary in tests.

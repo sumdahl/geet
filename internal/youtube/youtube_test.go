@@ -323,3 +323,105 @@ func TestResolveFallsBackToAudioQuery(t *testing.T) {
 		t.Errorf("without a fallback: err = %v, want ErrNoMatch", err)
 	}
 }
+
+// kaalpanik is Bartika Eam Rai's "Kaalpanik / Maayajastai": regular search
+// finds only the official video (21s of intro too long), a live session and
+// uploads spelling the title "MaayaaJastai". YouTube Music lists the studio
+// audio on "Bartika Eam Rai - Topic" at Spotify's exact 273s.
+var kaalpanik = spotify.Track{Title: "Kaalpanik / Maayajastai", Artists: []string{"Bartika Eam Rai"}, Duration: 273 * time.Second}
+
+func fakeYtDlp(t *testing.T, fixtures ...string) (bin, argsFile string) {
+	t.Helper()
+	bin, _ = filepath.Abs("testdata/fake-yt-dlp")
+	var outs []string
+	for _, f := range fixtures {
+		p, _ := filepath.Abs(filepath.Join("testdata", f))
+		outs = append(outs, p)
+	}
+	argsFile = filepath.Join(t.TempDir(), "args")
+	t.Setenv("FAKE_YTDLP_ARGS", argsFile)
+	t.Setenv("FAKE_YTDLP_OUTPUT", "")
+	t.Setenv("FAKE_YTDLP_OUTPUTS", strings.Join(outs, " "))
+	return bin, argsFile
+}
+
+func newResolver(bin string, music bool) *Resolver {
+	return New(Options{
+		YtDlp:           ytdlp.Runner{Binary: bin},
+		SearchQuery:     "{artists} - {title}",
+		FallbackQuery:   "{artists} - {title} audio",
+		SearchResults:   5,
+		MaxDurationDiff: maxDiff,
+		MusicFallback:   music,
+	})
+}
+
+func TestResolveFallsBackToYouTubeMusic(t *testing.T) {
+	bin, argsFile := fakeYtDlp(t, "kaalpanik.ndjson", "kaalpanik_audio.ndjson", "kaalpanik_music.ndjson", "kaalpanik_music_details.ndjson")
+	best, all, err := newResolver(bin, true).Resolve(context.Background(), kaalpanik)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if best.ID != "6gvt_1t-nGY" || best.Channel != "Bartika Eam Rai - Topic" {
+		t.Errorf("picked %s %q on %q, want the Topic channel's 6gvt_1t-nGY", best.ID, best.Title, best.Channel)
+	}
+	if best.URL != "https://www.youtube.com/watch?v=6gvt_1t-nGY" {
+		t.Errorf("URL %q, want the watch page", best.URL)
+	}
+	if len(all) != 11 {
+		t.Errorf("%d candidates reported, want 5 + 5 from the searches and 1 from YouTube Music", len(all))
+	}
+	raw, _ := os.ReadFile(argsFile)
+	calls := strings.Split(strings.TrimSuffix(string(raw), "--\n"), "--\n")
+	if len(calls) != 4 {
+		t.Fatalf("%d yt-dlp runs, want 4:\n%s", len(calls), raw)
+	}
+	if !strings.Contains(calls[2], "https://music.youtube.com/search?q=Bartika+Eam+Rai+Kaalpanik+%2F+Maayajastai#songs") {
+		t.Errorf("YouTube Music not searched for the songs section:\n%s", calls[2])
+	}
+	// Only the listed title that fits is opened, not the artist's other songs.
+	if !strings.Contains(calls[3], "--skip-download") || strings.Count(calls[3], "watch?v=") != 1 || !strings.Contains(calls[3], "6gvt_1t-nGY") {
+		t.Errorf("details run should open just 6gvt_1t-nGY:\n%s", calls[3])
+	}
+}
+
+func TestResolveWithoutYouTubeMusic(t *testing.T) {
+	bin, argsFile := fakeYtDlp(t, "kaalpanik.ndjson", "kaalpanik_audio.ndjson")
+	if _, _, err := newResolver(bin, false).Resolve(context.Background(), kaalpanik); !errors.Is(err, ErrNoMatch) {
+		t.Fatalf("err = %v, want ErrNoMatch", err)
+	}
+	if raw, _ := os.ReadFile(argsFile); strings.Contains(string(raw), "music.youtube.com") {
+		t.Errorf("searched YouTube Music with the fallback off:\n%s", raw)
+	}
+}
+
+// When no listed title fits, nothing is opened: that would cost ~2s a
+// result for candidates bound to be rejected.
+func TestYouTubeMusicOpensOnlyFittingTitles(t *testing.T) {
+	bin, argsFile := fakeYtDlp(t, "kaalpanik.ndjson", "kaalpanik_audio.ndjson", "kaalpanik_music.ndjson")
+	other := spotify.Track{Title: "Some Other Song", Artists: []string{"Bartika Eam Rai"}, Duration: 273 * time.Second}
+	if _, _, err := newResolver(bin, true).Resolve(context.Background(), other); !errors.Is(err, ErrNoMatch) {
+		t.Fatalf("err = %v, want ErrNoMatch", err)
+	}
+	raw, _ := os.ReadFile(argsFile)
+	if strings.Contains(string(raw), "--skip-download") {
+		t.Errorf("opened results although no title fit:\n%s", raw)
+	}
+}
+
+func TestParseCandidatesIgnoresStreamURL(t *testing.T) {
+	in := `{"id":"abc","title":"Song","channel":"Band","duration":200,"url":"https://rr1---sn.googlevideo.com/videoplayback?expire=1"}
+{"id":"def","title":"Song","channel":"Band","duration":200,"url":"https://music.youtube.com/watch?v=def"}
+{"id":"ghi","title":"Song","channel":"Band","duration":200,"webpage_url":"https://www.youtube.com/watch?v=ghi","url":"https://rr1---sn.googlevideo.com/x"}
+`
+	cands, err := parseCandidates(strings.NewReader(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"https://www.youtube.com/watch?v=abc", "https://music.youtube.com/watch?v=def", "https://www.youtube.com/watch?v=ghi"}
+	for i, c := range cands {
+		if c.URL != want[i] {
+			t.Errorf("%s: URL %q, want %q", c.ID, c.URL, want[i])
+		}
+	}
+}

@@ -19,7 +19,32 @@ var (
 	// ("Sign in to confirm you're not a bot"). Unlike a stray 403 it doesn't
 	// pass by retrying: retries only prolong it.
 	ErrBotCheck = errors.New("YouTube wants you to confirm you're not a bot")
+	// ErrAgeRestricted is a video YouTube plays only to a signed-in,
+	// age-verified account. Retrying doesn't help either.
+	ErrAgeRestricted = errors.New("YouTube age-restricts this video")
 )
+
+// ageRestrictedError is ErrAgeRestricted, noting whether a YouTube account
+// was signed in, which decides the fix.
+type ageRestrictedError struct{ signedIn bool }
+
+func (e *ageRestrictedError) Error() string {
+	if e.signedIn {
+		return ErrAgeRestricted.Error() + " (the signed-in account isn't age-verified)"
+	}
+	return ErrAgeRestricted.Error() + " (sign-in needed)"
+}
+
+func (e *ageRestrictedError) Is(target error) bool { return target == ErrAgeRestricted }
+
+// AgeRestrictedAdvice is what to tell the user after ErrAgeRestricted.
+func AgeRestrictedAdvice(err error) string {
+	var e *ageRestrictedError
+	if errors.As(err, &e) && e.signedIn {
+		return "YouTube age-restricts some songs and plays them only to an age-verified account. The YouTube account in your browser isn't verified, so YouTube offers only a low-quality video: verify your age in your Google account, then run the same command again."
+	}
+	return "YouTube age-restricts some songs and plays them only to a signed-in, age-verified account. Set youtube.cookies_from_browser = \"auto\" to use your default browser's YouTube sign-in, then run the same command again."
+}
 
 // BotCheckFix is how to get past ErrBotCheck without cookies configured.
 const BotCheckFix = `wait an hour and lower jobs, or set youtube.cookies_from_browser = "auto" to use your default browser's YouTube sign-in`
@@ -114,11 +139,28 @@ func (r Runner) RunLines(ctx context.Context, onLine func(string), args ...strin
 			// depends on the cookie setup, is shown once by the caller.
 			return &botCheckError{cookieTrouble: CookieTrouble(stderr.String())}
 		}
+		if restricted, signedIn := ageRestriction(stderr.String()); restricted {
+			return &ageRestrictedError{signedIn: signedIn}
+		}
 		// Lead with yt-dlp's own explanation: it is what a one-line display
 		// has room for, and "exit status 1" says nothing.
 		return fmt.Errorf("yt-dlp: %s (%w)", reason(stderr.String()), err)
 	}
 	return sc.Err()
+}
+
+// ageRestriction recognizes YouTube's age gate: without a sign-in yt-dlp
+// stops at "Sign in to confirm your age"; with one whose account isn't
+// age-verified it warns about "account age-verification" and then finds no
+// audio format, since only a low-quality video is offered.
+func ageRestriction(stderr string) (restricted, signedIn bool) {
+	switch {
+	case strings.Contains(stderr, "confirm your age"):
+		return true, false
+	case strings.Contains(stderr, "age-verification") && strings.Contains(stderr, "Requested format is not available"):
+		return true, true
+	}
+	return false, false
 }
 
 func isBotCheck(stderr string) bool {
