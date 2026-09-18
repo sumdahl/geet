@@ -7,6 +7,8 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-09-19
+
 ### Changed
 - Reading a playlist from Spotify makes about half the requests. A
   playlist's own page lists each song's artists, length and explicit flag,
@@ -238,7 +240,8 @@ First release.
   YouTube. Ctrl+C leaves no partial files, and re-running resumes.
 - `geet version` shows the release, commit and date.
 
-[Unreleased]: https://github.com/sumdahl/geet/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/sumdahl/geet/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/sumdahl/geet/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/sumdahl/geet/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/sumdahl/geet/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/sumdahl/geet/compare/v0.2.0...v0.3.0
