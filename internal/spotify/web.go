@@ -51,6 +51,10 @@ type Web struct {
 	OnProgress func(done, total int)
 	// Workers is how many playlist tracks are read at once (default 1).
 	Workers int
+	// RateLimitAttempts is how many times a request is sent while Spotify
+	// answers 429, pausing in between (default 6, about a minute in all).
+	// 1 reports the limit at once, as a health check wants.
+	RateLimitAttempts int
 
 	mu     sync.Mutex
 	albums map[string]*webAlbum
@@ -409,9 +413,12 @@ func (w *Web) trackMeta(ctx context.Context, id string) (map[string][]string, er
 
 // fetch GETs u. When Spotify answers 429 (too many requests), every worker
 // pauses until the shared cooldown ends (Spotify's Retry-After, or a
-// doubling backoff), then retries, up to rateLimitAttempts times.
+// doubling backoff), then retries, up to RateLimitAttempts times.
 func (w *Web) fetch(ctx context.Context, u, userAgent string) ([]byte, error) {
-	const rateLimitAttempts = 6
+	rateLimitAttempts := w.RateLimitAttempts
+	if rateLimitAttempts < 1 {
+		rateLimitAttempts = 6
+	}
 	for attempt := 1; ; attempt++ {
 		if err := w.waitCooldown(ctx); err != nil {
 			return nil, err

@@ -370,7 +370,9 @@ func checkSpotify(ctx context.Context, cfg config.Config) Check {
 		c.Name = "Spotify API"
 		t, err = spotify.NewAPI(cfg.Spotify.ClientID, cfg.Spotify.ClientSecret).Track(ctx, probeSpotifyTrack)
 	} else {
-		t, err = spotify.NewWeb("").Track(ctx, probeSpotifyTrack)
+		web := spotify.NewWeb("")
+		web.RateLimitAttempts = 1 // report a 429 now; don't wait it out
+		t, err = web.Track(ctx, probeSpotifyTrack)
 	}
 	switch {
 	case err != nil:
