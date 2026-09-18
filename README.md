@@ -1,6 +1,6 @@
 # geet
 
-*geet* (गीत) is Nepali and Hindi for "song". It downloads Spotify tracks, albums and playlists as tagged audio files.
+*geet* (गीत in Devanagari) means "song". It downloads Spotify tracks, albums and playlists as tagged audio files.
 
 `geet` reads a link's metadata from Spotify, finds the matching upload on YouTube, downloads it with `yt-dlp`, and uses `ffmpeg` to convert it, tag it and embed the album cover. A 50-track playlist takes about a minute.
 
