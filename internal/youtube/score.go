@@ -25,16 +25,6 @@ const (
 	penaltyVideo   = 3.0
 )
 
-// Words that mark a different recording or an altered one. Each costs
-// penaltyVariant unless the Spotify title has it too ("Song (Live)" should
-// still match a live upload).
-var variantWords = []string{
-	"live", "concert", "cover", "remix", "karaoke", "instrumental", "acoustic",
-	"demo", "sped up", "slowed", "reverb", "nightcore", "8d", "extended",
-	"mashup", "parody", "reaction", "tutorial", "lesson", "isolated", "solo",
-	"1 hour", "loop", "bass boosted",
-}
-
 // Scored is a candidate with its verdict, kept for all candidates so a
 // consumer can explain why a match won.
 type Scored struct {
@@ -62,7 +52,7 @@ func score(t spotify.Track, c Candidate, rank, n int, maxDiff time.Duration) Sco
 	}
 
 	ytTitle := textnorm.Tokens(c.Title)
-	coverage := tokenCoverage(titleWords(t.Title), textnorm.Words(c.Title))
+	coverage := tokenCoverage(titleWords(t), textnorm.Words(c.Title))
 	if coverage < minTitleCoverage {
 		return reject("title matches %.0f%%", coverage*100)
 	}
@@ -89,13 +79,10 @@ func score(t spotify.Track, c Candidate, rank, n int, maxDiff time.Duration) Sco
 		s.Score += weightVerified
 	}
 
-	spTitle := " " + textnorm.Norm(t.Title) + " "
-	yt := " " + strings.Join(ytTitle, " ") + " "
-	for _, w := range variantWords {
-		if strings.Contains(yt, " "+w+" ") && !strings.Contains(spTitle, " "+w+" ") {
-			s.Score -= penaltyVariant
-		}
+	for range textnorm.Variants(c.Title, t.Title) {
+		s.Score -= penaltyVariant
 	}
+	yt := " " + strings.Join(ytTitle, " ") + " "
 	switch {
 	case strings.Contains(yt, " audio "):
 		s.Score += weightAudio
@@ -112,12 +99,22 @@ func score(t spotify.Track, c Candidate, rank, n int, maxDiff time.Duration) Sco
 
 // titleWords are the words that identify the song: the base title without a
 // "(feat. X)" or " - Remastered" suffix, which uploads often leave out.
-// Censored words keep their asterisks as wildcards.
-func titleWords(title string) []string {
-	if b := textnorm.Words(textnorm.StripVersion(title)); len(b) > 0 {
-		return b
+// Censored words keep their asterisks as wildcards. A clean edit's title
+// has the explicit part cut off ("umean" for "fukumean"), so its words may
+// match the end of an upload's word.
+func titleWords(t spotify.Track) []string {
+	words := textnorm.Words(textnorm.StripVersion(t.Title))
+	if len(words) == 0 {
+		words = textnorm.Words(t.Title)
 	}
-	return textnorm.Words(title)
+	if t.Clean {
+		for i, w := range words {
+			if len(w) >= 3 && !strings.Contains(w, "*") {
+				words[i] = "*" + w
+			}
+		}
+	}
+	return words
 }
 
 // tokenCoverage is the share of want found in have, comparing with

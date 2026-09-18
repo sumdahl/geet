@@ -133,6 +133,17 @@ func TestScoreRules(t *testing.T) {
 			track: func(t *spotify.Track) { t.Title = "Song (Live)" },
 			cand:  func(c *Candidate) { c.Title = "Band - Song (Live)" },
 		},
+		{
+			name:  "clean edit's cut title matches the full word",
+			track: func(t *spotify.Track) { t.Title = "ong"; t.Clean = true },
+			cand:  func(*Candidate) {},
+		},
+		{
+			name:       "cut title without the clean flag is a different song",
+			track:      func(t *spotify.Track) { t.Title = "ong" },
+			cand:       func(*Candidate) {},
+			wantReject: true,
+		},
 		{name: "topic channel", cand: func(c *Candidate) { c.Title = "Song"; c.Channel = "Band - Topic" }},
 		{name: "vevo channel", cand: func(c *Candidate) { c.Channel = "BandVEVO" }},
 	}

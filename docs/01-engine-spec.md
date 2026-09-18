@@ -71,6 +71,20 @@ One ffmpeg pass per track: convert, tag, embed cover.
   and renamed into place, so a finished file appears atomically and Ctrl+C
   leaves nothing behind. Existing files are skipped unless `overwrite`.
 
+## Search (`internal/itunes`, `cmd/geet/search.go`)
+- `geet search <words…>` calls the iTunes Search API (`entity=song`, 50 results,
+  `search.country` store) and maps each result to a `spotify.Track`: ID
+  `itunes:<trackId>`, 600px cover, the Apple Music link as `SourceURL` (and as
+  the comment tag), and `Clean` for clean edits.
+- `itunes.Rank` merges album editions (same normalized title and artists,
+  within 2s), scores query-word coverage minus variant words (title in full,
+  album/artist at half) plus an edition-count popularity bonus, and sorts
+  stably. Found live: the raw order put The Weeknd's "Blinding Lights" 7th.
+- Picks go through fzf (`--multi`, index in a hidden first field) or a
+  numbered prompt, then `runDownload` with late Deezer tags, as for tracks.
+- Clean edits have censored titles; `youtube.titleWords` gives their words a
+  leading wildcard so "umean" still matches "fukumean" uploads.
+
 ## Duplicates (`internal/index`)
 - `$XDG_DATA_HOME/geet/index.json` (`index_path`) maps Spotify track
   ID + format → file, plus ISRC → track, updated and saved after every

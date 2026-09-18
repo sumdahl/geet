@@ -20,6 +20,7 @@ import (
 	"github.com/sumdahl/geet/internal/deezer"
 	"github.com/sumdahl/geet/internal/download"
 	"github.com/sumdahl/geet/internal/index"
+	"github.com/sumdahl/geet/internal/itunes"
 	"github.com/sumdahl/geet/internal/library"
 	"github.com/sumdahl/geet/internal/pipeline"
 	"github.com/sumdahl/geet/internal/spotify"
@@ -101,7 +102,7 @@ func (r *reporter) fatal(err error) int {
 }
 
 func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	c := newCLI("download", "download [flags] <spotify-url>", stderr)
+	c := newCLI("download", "download [flags] <spotify-url | apple-music-url | itunes:<id>>", stderr)
 	positional, err := c.parse(args)
 	if errors.Is(err, flag.ErrHelp) {
 		return exitOK
@@ -113,27 +114,26 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		c.fs.Usage()
 		return exitFatal
 	}
-	// The display depends on config, so config errors go out plainly.
-	rep := &reporter{ui: &plainUI{w: stderr}, warned: map[string]bool{}}
-	if c.json {
-		rep.json = json.NewEncoder(stdout)
+	rep, cfg, err := prepare(c, stdout, stderr)
+	if err != nil {
+		return rep.fatal(err)
 	}
-	setupLogging(stderr, c.verbose)
+	link := positional[0]
 
-	cfg, _, err := c.load()
-	if err != nil {
-		return rep.fatal(err)
-	}
-	ref, err := spotify.ParseURL(positional[0])
-	if err != nil {
-		return rep.fatal(err)
-	}
-	for _, tool := range []struct{ name, bin string }{{"yt-dlp", cfg.Tools.YtDlp}, {"ffmpeg", cfg.Tools.FFmpeg}} {
-		if _, err := exec.LookPath(tool.bin); err != nil {
-			return rep.fatal(fmt.Errorf("%s not found (%q): install it or set tools.%s", tool.name, tool.bin, strings.ReplaceAll(tool.name, "-", "_")))
+	if itunes.IsRef(link) {
+		col, err := lookupITunes(ctx, cfg, link)
+		if err != nil {
+			return rep.fatal(err)
 		}
+		rep.ui = chooseUI(cfg.Progress, stderr, c.json)
+		setupLogging(rep.ui.writer(), c.verbose)
+		return runDownload(ctx, c, cfg, rep, col, true, stderr)
 	}
 
+	ref, err := spotify.ParseURL(link)
+	if err != nil {
+		return rep.fatal(err)
+	}
 	rep.ui = chooseUI(cfg.Progress, stderr, c.json)
 	setupLogging(rep.ui.writer(), c.verbose)
 
@@ -168,6 +168,50 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	if err != nil {
 		return rep.fatal(err)
 	}
+	return runDownload(ctx, c, cfg, rep, col, lateTags, stderr)
+}
+
+// prepare loads the config and checks for the tools every download needs.
+// The reporter prints plainly until the caller switches to the configured
+// display, so config errors come out readable either way.
+func prepare(c *cli, stdout, stderr io.Writer) (*reporter, config.Config, error) {
+	rep := &reporter{ui: &plainUI{w: stderr}, warned: map[string]bool{}}
+	if c.json {
+		rep.json = json.NewEncoder(stdout)
+	}
+	setupLogging(stderr, c.verbose)
+
+	cfg, _, err := c.load()
+	if err != nil {
+		return rep, cfg, err
+	}
+	for _, tool := range []struct{ name, bin string }{{"yt-dlp", cfg.Tools.YtDlp}, {"ffmpeg", cfg.Tools.FFmpeg}} {
+		if _, err := exec.LookPath(tool.bin); err != nil {
+			return rep, cfg, fmt.Errorf("%s not found (%q): install it or set tools.%s", tool.name, tool.bin, strings.ReplaceAll(tool.name, "-", "_"))
+		}
+	}
+	return rep, cfg, nil
+}
+
+// lookupITunes resolves an "itunes:<id>" reference or Apple Music song link
+// (what `geet search --json` hands out) to a one-track collection.
+func lookupITunes(ctx context.Context, cfg config.Config, link string) (spotify.Collection, error) {
+	id, err := itunes.ParseRef(link)
+	if err != nil {
+		return spotify.Collection{}, err
+	}
+	t, err := itunes.New("", cfg.Search.Country).Lookup(ctx, id)
+	if err != nil {
+		return spotify.Collection{}, err
+	}
+	return spotify.Collection{Ref: spotify.Ref{Kind: spotify.KindTrack, ID: t.ID}, Name: t.Title, Tracks: []spotify.Track{t}}, nil
+}
+
+// runDownload takes a resolved collection through the pipeline into the
+// library and reports the outcome as an exit code. lateTags means ISRC and
+// disc numbers are still to be looked up per track (see resolveMetadata).
+func runDownload(ctx context.Context, c *cli, cfg config.Config, rep *reporter, col spotify.Collection, lateTags bool, stderr io.Writer) int {
+	ref := col.Ref
 	tracks := col.Tracks
 	root := cfg.Output
 	if ref.Kind == spotify.KindPlaylist && cfg.PlaylistFolder {

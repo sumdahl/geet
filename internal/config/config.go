@@ -27,6 +27,8 @@ var (
 	formats         = []string{"opus", "flac", "mp3"}
 	duplicateModes  = []string{"link", "copy", "skip", "download"}
 	progressAnswers = []string{"auto", "always", "never"}
+	pickers         = []string{"auto", "fzf", "list"}
+	countryCode     = regexp.MustCompile(`^[A-Za-z]{2}$`)
 	bitrate         = regexp.MustCompile(`^[1-9][0-9]*k$`)
 )
 
@@ -46,6 +48,7 @@ type Config struct {
 	ResolveJobs        int     `toml:"resolve_jobs" json:"resolve_jobs"`
 	Spotify            Spotify `toml:"spotify" json:"spotify"`
 	YouTube            YouTube `toml:"youtube" json:"youtube"`
+	Search             Search  `toml:"search" json:"search"`
 	Tools              Tools   `toml:"tools" json:"tools"`
 }
 
@@ -64,6 +67,14 @@ type YouTube struct {
 	CookiesFile        string   `toml:"cookies_file" json:"cookies_file"`
 	CookiesFromBrowser string   `toml:"cookies_from_browser" json:"cookies_from_browser"`
 	ExtraArgs          []string `toml:"extra_args" json:"extra_args"`
+}
+
+// Search configures `geet search`, which looks songs up in the iTunes
+// catalog.
+type Search struct {
+	Country string `toml:"country" json:"country"`
+	Limit   int    `toml:"limit" json:"limit"`
+	Picker  string `toml:"picker" json:"picker"`
 }
 
 type Tools struct {
@@ -106,7 +117,8 @@ func Default() Config {
 			MaxDurationDiff: Duration{10 * time.Second},
 			ExtraArgs:       []string{},
 		},
-		Tools: Tools{YtDlp: "yt-dlp", FFmpeg: "ffmpeg", FFprobe: "ffprobe"},
+		Search: Search{Country: "US", Limit: 15, Picker: "auto"},
+		Tools:  Tools{YtDlp: "yt-dlp", FFmpeg: "ffmpeg", FFprobe: "ffprobe"},
 	}
 }
 
@@ -220,6 +232,15 @@ func (c Config) Validate() error {
 	}
 	if c.YouTube.CookiesFile != "" && c.YouTube.CookiesFromBrowser != "" {
 		errs = append(errs, errors.New("set youtube.cookies_file or youtube.cookies_from_browser, not both"))
+	}
+	if !countryCode.MatchString(c.Search.Country) {
+		errs = append(errs, fmt.Errorf("search.country %q must be a two-letter store code such as US", c.Search.Country))
+	}
+	if c.Search.Limit < 1 || c.Search.Limit > 50 {
+		errs = append(errs, fmt.Errorf("search.limit must be 1-50, got %d", c.Search.Limit))
+	}
+	if !slices.Contains(pickers, c.Search.Picker) {
+		errs = append(errs, fmt.Errorf("search.picker %q must be one of %s", c.Search.Picker, strings.Join(pickers, ", ")))
 	}
 	if c.Tools.YtDlp == "" || c.Tools.FFmpeg == "" || c.Tools.FFprobe == "" {
 		errs = append(errs, errors.New("tools.yt_dlp, tools.ffmpeg and tools.ffprobe must not be empty"))

@@ -19,6 +19,8 @@ import (
 	"sync"
 
 	"golang.org/x/sync/errgroup"
+
+	"github.com/sumdahl/geet/internal/itunes"
 )
 
 type Entry struct {
@@ -176,10 +178,11 @@ func (x *Index) Save() error {
 
 var audioExts = map[string]bool{".opus": true, ".mp3": true, ".flac": true}
 
-// Scan adds every audio file under root that geet tagged (its comment
-// is the track's Spotify URL), reading tags with ffprobe. It's for building
-// the index from a library downloaded before the index existed. onProgress,
-// if set, gets files done and the total.
+// Scan adds every audio file under root that geet tagged: its comment is
+// the track's Spotify URL, or its Apple Music URL for search downloads. Tags
+// are read with ffprobe. It's for building the index from a library
+// downloaded before the index existed. onProgress, if set, gets files done
+// and the total.
 func (x *Index) Scan(ctx context.Context, ffprobe, root string, onProgress func(done, total int)) error {
 	var files []string
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
@@ -242,6 +245,8 @@ func readTags(ctx context.Context, ffprobe, path string) (id, isrc string, ok bo
 		case "comment":
 			if rest, ok := strings.CutPrefix(v, trackURLPrefix); ok {
 				id = rest
+			} else if itID, err := itunes.ParseRef(v); err == nil {
+				id = itunes.RefPrefix + itID // a search download: Apple Music link
 			}
 		case "isrc", "tsrc":
 			isrc = v

@@ -62,3 +62,16 @@ The plugin configures the engine without touching its internals:
   `type` one of `string|int|duration|list`; `geet config --json`
   returns the effective config as one object. Secrets come back as
   `"<redacted>"`.
+
+## Search (`geet search <words…> --json`)
+Prints one JSON array (not NDJSON) of ranked results and downloads nothing:
+```json
+[{"index":1,"ref":"itunes:1499378607","title":"Blinding Lights","artists":["The Weeknd"],
+  "album":"After Hours","album_artist":"The Weeknd","year":2019,"duration_ms":200046,
+  "cover_url":"https://…/600x600bb.jpg","url":"https://music.apple.com/…","editions":7,
+  "label":"Blinding Lights — The Weeknd · After Hours (2019) 3:20"}]
+```
+- Show `label` (or build a row from the fields) in the plugin's own menu. Then run `geet download <ref> --json` for each pick, which emits the usual NDJSON events.
+- `clean: true` marks a clean edit (its title may be censored).
+- `geet download` accepts `itunes:<id>` refs and Apple Music song links.
+- `geet search <words…> --pick 1,3` downloads without a menu.

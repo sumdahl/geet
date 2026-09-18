@@ -46,6 +46,7 @@ Or run from the source tree without installing: `go run ./cmd/geet download <url
 
 ```sh
 geet download <spotify-url>        # a track, album or playlist
+geet search <words…>               # find a song by name, pick it, download it
 geet config                        # effective configuration (TOML; --json for JSON)
 geet config path                   # where the config file lives
 geet config settings               # every setting with its flag and env variable
@@ -69,6 +70,30 @@ geet download "<url>" -v                             # debug logs, including eve
 ```
 
 Exit codes: `0` all tracks succeeded, `1` some failed (the others were saved), `2` fatal (bad link, missing tool, interrupted).
+
+### Search
+
+Don't have a link? Search by name, pick from a menu, and it downloads like any track:
+
+```
+$ geet search blinding lights
+╭──────────────────────────────────────────────────────────────╮
+│ Search ›                                                     │
+│ ▌ Blinding Lights — The Weeknd · After Hours (2019) 3:20     │
+│   Blinding Lights — KIDZ BOP Kids · KIDZ BOP 2021 (2020) 2:59│
+│   Blinding Lights — Teddy Swims (2020) 3:34                  │
+│   15/15 ─────────────────────────────────────────────────────│
+│ Tab: pick several · Enter: download · Esc: cancel            │
+╰──────────────────────────────────────────────────────────────╯
+```
+
+- Songs come from the iTunes catalog: no key, any country's store (`search.country`, default `US`), and Nepali and other regional music included.
+- The raw catalog order puts covers above originals, so geet merges album editions of the same recording and re-ranks. Covers, remixes, instrumentals, slowed and lullaby versions sink, and the original (listed on the most editions) rises.
+- The menu is [fzf](https://github.com/junegunn/fzf), which ships with Omarchy: type to filter, Tab to pick several songs, which then download in parallel. Without fzf you get a numbered list (`1`, `1 3` or `2-4`).
+- Scripting: `geet search <words> --pick 1` chooses without a menu, and `geet search <words> --json` lists results (each with a `ref`) without downloading. `geet download itunes:<id>` and Apple Music song links download directly.
+- Limits:
+  - Apple's public catalog lists some explicit songs only as clean edits, whose titles are censored too ("umean" for Gunna's "fukumean"). These are marked `(clean)`, and matching still finds the right upload.
+  - A few labels' catalogs aren't searchable from some regions. For those, use the Spotify link.
 
 ### Where files go
 
@@ -139,6 +164,9 @@ client_secret = "..."
 | `youtube.cookies_file` | `--youtube-cookies-file` | string | | Netscape cookies file for yt-dlp |
 | `youtube.cookies_from_browser` | `--youtube-cookies-from-browser` | string | | Browser yt-dlp reads cookies from |
 | `youtube.extra_args` | `--youtube-extra-args` | list | | Extra yt-dlp arguments, space-separated |
+| `search.country` | `--search-country` | string | `US` | iTunes store `geet search` looks in |
+| `search.limit` | `--search-limit` | int | `15` | Results offered to pick from |
+| `search.picker` | `--search-picker` | string | `auto` | `auto` (fzf if installed), `fzf` or `list` |
 | `tools.yt_dlp` | `--tools-yt-dlp` | string | `yt-dlp` | Executables |
 | `tools.ffmpeg` | `--tools-ffmpeg` | string | `ffmpeg` | |
 | `tools.ffprobe` | `--tools-ffprobe` | string | `ffprobe` | |
@@ -200,10 +228,11 @@ With `--json`, stdout carries only NDJSON: one event per line, as each track mov
 
 | Package | Role |
 |---|---|
-| `cmd/geet` | CLI: subcommands, flags generated from the settings list, the per-track stages (`download.go`), the stderr display (`ui.go`) |
+| `cmd/geet` | CLI: subcommands, flags generated from the settings list, the per-track stages (`download.go`), search and the fzf/numbered picker (`search.go`, `pick.go`), the stderr display (`ui.go`) |
 | `internal/config` | Settings, defined once in `Config.Settings()`. Each becomes a TOML key, a `--flag` and a `GEET_*` variable, and is validated. |
 | `internal/spotify` | Link parsing. `Web` scrapes the public pages (keyless); `API` uses the official Web API. Both return a `Collection`. |
 | `internal/deezer` | Fills in what the public pages lack (ISRC, disc and track numbers) from Deezer's keyless API. Best effort: album match first, then per-track search. |
+| `internal/itunes` | Keyless catalog search and lookup for `geet search`. Merges album editions and ranks originals above covers. |
 | `internal/youtube` | Builds the query and scores candidates from yt-dlp's flat search. Keeps every candidate's score or rejection reason for debugging. |
 | `internal/ytdlp` | Shared yt-dlp runner (cookies, extra args, streaming output, error reasons) |
 | `internal/download` | Fetches the best audio stream unmodified, reporting progress |

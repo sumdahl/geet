@@ -45,6 +45,10 @@ A Go CLI that takes a Spotify track, album or playlist URL, gets its metadata (s
 - Resolving a link returns a `spotify.Collection` (ref, name, tracks). The name is what the playlist folder is named after.
 - `internal/index`: the download index, which stops the same song being downloaded twice (hard link, copy or skip, per `duplicates`).
   - It relies on the comment tag holding the Spotify track URL, which `internal/audio` writes. The first-run `Scan` finds old downloads that way, so never drop that tag.
+- `internal/itunes` and `cmd/geet/search.go`/`pick.go`: `geet search`, which uses the keyless iTunes catalog, then ranks, picks with fzf or a numbered list, and runs the same pipeline.
+  - Raw iTunes order is unusable: covers come before originals, and each album edition repeats. `Rank` merges editions and uses the edition count as popularity.
+  - Search downloads carry the Apple Music URL in the comment tag, and the index maps it to `itunes:<id>`.
+  - Fixtures in `internal/itunes/testdata` are real catalog responses.
 - `internal/textnorm`: shared title/name normalization. It keeps Unicode marks so Devanagari words don't split apart.
 - `internal/ytdlp`: the shared yt-dlp runner (cookies and extra args), used by both search and download.
 - `internal/download`: fetches the raw best audio only. It deliberately avoids `--extract-audio`, which ignores the requested bitrate when the codecs match.

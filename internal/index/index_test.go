@@ -136,6 +136,7 @@ func TestScan(t *testing.T) {
 	}
 	opus := mk("daily-mix-1/Stan - Eminem.opus", "https://open.spotify.com/track/stanID", "ISRC", "USIR1")
 	mp3 := mk("Mask Off - Future.mp3", "https://open.spotify.com/track/maskID", "TSRC", "USSM2")
+	searched := mk("Blinding Lights - The Weeknd.opus", "https://music.apple.com/us/album/blinding-lights/1499378108?i=1499378607&uo=4", "", "")
 	mk("not-ours.opus", "ripped from a CD", "", "")
 	mk(".geet-123/source.opus", "https://open.spotify.com/track/workdir", "", "")
 
@@ -144,11 +145,14 @@ func TestScan(t *testing.T) {
 	if err := idx.Scan(context.Background(), "ffprobe", root, func(d, n int) { last = [2]int{d, n} }); err != nil {
 		t.Fatal(err)
 	}
-	if last != [2]int{3, 3} {
-		t.Errorf("progress ended at %v, want 3/3 (hidden work dir skipped)", last)
+	if last != [2]int{4, 4} {
+		t.Errorf("progress ended at %v, want 4/4 (hidden work dir skipped)", last)
 	}
-	if idx.Len() != 2 {
-		t.Errorf("indexed %d files, want 2", idx.Len())
+	if idx.Len() != 3 {
+		t.Errorf("indexed %d files, want 3", idx.Len())
+	}
+	if got, _ := idx.Lookup("itunes:1499378607", "", "opus"); got != searched {
+		t.Errorf("search download = %q", got)
 	}
 	if got, _ := idx.Lookup("stanID", "", "opus"); got != opus {
 		t.Errorf("stan = %q", got)

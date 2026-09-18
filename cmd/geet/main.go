@@ -33,6 +33,7 @@ const usage = `usage: geet <command> [flags]
 
 commands:
   download <spotify-url>   download a track, album or playlist
+  search <words…>          find a song by name, pick it from a menu, download it
   watch                    watch the clipboard for Spotify URLs
   config                   show the effective configuration
   config path              print the config file location
@@ -59,6 +60,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "download":
 		return downloadCmd(ctx, args[1:], stdout, stderr)
+	case "search":
+		return searchCmd(ctx, args[1:], stdout, stderr)
 	case "config":
 		return configCmd(args[1:], stdout, stderr)
 	case "watch":

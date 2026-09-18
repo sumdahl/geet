@@ -20,6 +20,11 @@ type Track struct {
 	Year        int
 	Duration    time.Duration
 	ISRC        string
+	// SourceURL is where the track came from when that isn't Spotify (an
+	// Apple Music link for search results); URL returns it when set.
+	SourceURL string
+	// Clean marks a clean (censored) edit of an explicit song.
+	Clean bool
 }
 
 // Collection is what a Spotify link resolves to.
@@ -39,7 +44,12 @@ func collect(ref Ref, name string, tracks []Track) Collection {
 	return Collection{Ref: ref, Name: name, Tracks: tracks}
 }
 
-func (t Track) URL() string { return Ref{Kind: KindTrack, ID: t.ID}.URL() }
+func (t Track) URL() string {
+	if t.SourceURL != "" {
+		return t.SourceURL
+	}
+	return Ref{Kind: KindTrack, ID: t.ID}.URL()
+}
 
 // Dates come as "2011", "2011-03", "2011-03-14" or a full ISO timestamp.
 func year(date string) int {

@@ -9,6 +9,31 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
+// VariantWords mark a different or altered recording. Matching penalizes one
+// found in a candidate's title unless the wanted title has it too ("Song
+// (Live)" should still match a live upload). Multi-word entries are matched
+// as whole-word phrases against Norm output.
+var VariantWords = []string{
+	"live", "concert", "cover", "remix", "karaoke", "instrumental", "acoustic",
+	"demo", "sped up", "slowed", "reverb", "nightcore", "8d", "extended",
+	"mashup", "parody", "reaction", "tutorial", "lesson", "isolated", "solo",
+	"1 hour", "loop", "bass boosted", "tribute", "lullaby", "rendition",
+	"8 bit", "lofi", "lo fi", "jersey club", "chopped", "screwed",
+}
+
+// Variants returns the VariantWords in title that aren't also in reference.
+func Variants(title, reference string) []string {
+	t := " " + Norm(title) + " "
+	r := " " + Norm(reference) + " "
+	var out []string
+	for _, w := range VariantWords {
+		if strings.Contains(t, " "+w+" ") && !strings.Contains(r, " "+w+" ") {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
 // Norm lowercases s, folds accents off Latin letters ("JAŸ-Z" → "jay z",
 // "Beyoncé" → "beyonce") and turns punctuation into single spaces.
 func Norm(s string) string {
