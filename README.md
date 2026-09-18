@@ -242,3 +242,7 @@ go vet ./... && gofmt -l .
 ## Legal
 
 This tool is for personal use with music you have the right to download. You're responsible for complying with YouTube's and Spotify's terms of service and with copyright law where you live.
+
+## License
+
+[MIT](LICENSE) © 2026 Sumiran Dahal. geet runs `yt-dlp` and `ffmpeg` as separate programs. Their own licenses apply to them, and neither is bundled with geet.
