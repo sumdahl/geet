@@ -22,6 +22,12 @@ var (
 	// ErrAgeRestricted is a video YouTube plays only to a signed-in,
 	// age-verified account. Retrying doesn't help either.
 	ErrAgeRestricted = errors.New("YouTube age-restricts this video")
+	// ErrUnplayable is an upload YouTube won't serve audio for: no format
+	// ("Requested format is not available", which is also what a signed-in
+	// account that isn't age-verified gets for an age-restricted video, with
+	// no warning saying so), removed, or private. Retrying doesn't help;
+	// another upload of the song may.
+	ErrUnplayable = errors.New("YouTube serves no audio for this upload")
 )
 
 // ageRestrictedError is ErrAgeRestricted, noting whether a YouTube account
@@ -142,6 +148,9 @@ func (r Runner) RunLines(ctx context.Context, onLine func(string), args ...strin
 		if restricted, signedIn := ageRestriction(stderr.String()); restricted {
 			return &ageRestrictedError{signedIn: signedIn}
 		}
+		if unplayable(stderr.String()) {
+			return fmt.Errorf("%w (%s)", ErrUnplayable, reason(stderr.String()))
+		}
 		// Lead with yt-dlp's own explanation: it is what a one-line display
 		// has room for, and "exit status 1" says nothing.
 		return fmt.Errorf("yt-dlp: %s (%w)", reason(stderr.String()), err)
@@ -161,6 +170,15 @@ func ageRestriction(stderr string) (restricted, signedIn bool) {
 		return true, true
 	}
 	return false, false
+}
+
+func unplayable(stderr string) bool {
+	for _, m := range []string{"Requested format is not available", "Video unavailable", "Private video", "This video is not available"} {
+		if strings.Contains(stderr, m) {
+			return true
+		}
+	}
+	return false
 }
 
 func isBotCheck(stderr string) bool {

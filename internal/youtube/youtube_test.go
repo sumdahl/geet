@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -567,5 +568,42 @@ func TestEditWordsInsideBrackets(t *testing.T) {
 	}
 	if alts := Alternatives(explicit, all, all[0]); len(alts) != 0 {
 		t.Errorf("alternatives %v, want none: the clean upload isn't the explicit recording", alts[0].Title)
+	}
+}
+
+// The first search for "Tonight (I'm Fuckin' You)" came back without any
+// stand-in for the age-restricted official upload, so the explicit version
+// needs a wider search before any clean edit. In the real 10-result searches
+// (both phrasings), the exact re-upload xA0V8jCVMmE is there.
+func TestMoreAlternatives(t *testing.T) {
+	bin, argsFile := fakeYtDlp(t, "tonight_wide.ndjson", "tonight_wide_artist.ndjson")
+	track := spotify.Track{
+		Title:    "Tonight (I'm Fuckin' You)",
+		Artists:  []string{"Enrique Iglesias", "Ludacris", "DJ Frank E"},
+		Duration: 232213 * time.Millisecond,
+		Explicit: true,
+	}
+	more, err := newResolver(bin, true).MoreAlternatives(context.Background(), track, map[string]bool{"-yFj3FvoOWY": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, a := range more {
+		ids = append(ids, a.ID)
+		if a.ID == "-yFj3FvoOWY" {
+			t.Error("offered the upload that already failed")
+		}
+		if !fullTitle(track, a.Title) {
+			t.Errorf("offered %q, which isn't the explicit recording", a.Title)
+		}
+	}
+	if !slices.Contains(ids, "xA0V8jCVMmE") {
+		t.Errorf("alternatives %v lack the exact re-upload xA0V8jCVMmE", ids)
+	}
+	raw, _ := os.ReadFile(argsFile)
+	for _, want := range []string{"ytsearch10:Enrique Iglesias, Ludacris, DJ Frank E - Tonight (I'm Fuckin' You)", "ytsearch10:Enrique Iglesias Tonight (I'm Fuckin' You)"} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("didn't search %q:\n%s", want, raw)
+		}
 	}
 }

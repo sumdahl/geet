@@ -609,8 +609,8 @@ func (d *downloader) download(ctx context.Context, j *trackJob) (*trackJob, bool
 	j.work = work
 	d.emit(j, "downloading")
 	j.src, err = d.fetch(ctx, j.url, j.work, j.tu, j.ev)
-	if errors.Is(err, ytdlp.ErrAgeRestricted) {
-		j.src, err = d.avoidAgeRestriction(ctx, j, err)
+	if errors.Is(err, ytdlp.ErrAgeRestricted) || errors.Is(err, ytdlp.ErrUnplayable) {
+		j.src, err = d.tryOtherUploads(ctx, j, err)
 	}
 	if err == nil {
 		// Display only (not an NDJSON stage): the download slot is free
@@ -620,21 +620,38 @@ func (d *downloader) download(ctx context.Context, j *trackJob) (*trackJob, bool
 	return j, false, err
 }
 
-// maxAlternatives caps the other uploads tried for an age-restricted one.
+// maxAlternatives caps the other uploads tried for one that failed.
 const maxAlternatives = 3
 
-// avoidAgeRestriction gets the song some other way when YouTube age-restricts
-// the upload chosen for it, in this order: the next uploads that passed
-// matching and exact re-uploads (youtube.Alternatives); then, for an
-// explicit song, its clean edit, found in the Apple catalog. The explicit
-// version is the default and the clean edit only a fallback, so the file
-// says so: " (Clean)" in the title tag and a warning. ageErr is returned if
-// nothing works.
-func (d *downloader) avoidAgeRestriction(ctx context.Context, j *trackJob, ageErr error) (download.Source, error) {
-	d.noticeAge(ageErr)
+// tryOtherUploads gets the song some other way when YouTube won't serve the
+// upload chosen for it (age-restricted, no format, removed), in this order:
+// the next uploads that passed matching and exact re-uploads
+// (youtube.Alternatives); then, for an explicit song, its clean edit,
+// found in the Apple catalog. The explicit version is the default and the
+// clean edit only a fallback, so the file says so: " (Clean)" in the title
+// tag and a warning. cause is returned if nothing works.
+//
+// A signed-in account that isn't age-verified gets ErrUnplayable, not
+// ErrAgeRestricted, for an age-restricted video: yt-dlp's download says
+// only that no format is available.
+func (d *downloader) tryOtherUploads(ctx context.Context, j *trackJob, cause error) (download.Source, error) {
+	why := "unavailable"
+	if errors.Is(cause, ytdlp.ErrAgeRestricted) {
+		why = "age-restricted"
+		d.noticeAge(cause)
+	}
+	// failed is what to report if nothing works: the first cause, unless a
+	// fallback ran into YouTube's bot check, which blocks every upload and
+	// has a fix of its own.
+	failed := cause
+	note := func(err error) {
+		if errors.Is(err, ytdlp.ErrBotCheck) {
+			failed = err
+		}
+	}
 	try := func(cands []youtube.Scored, what string) (download.Source, bool) {
 		for _, c := range cands[:min(len(cands), maxAlternatives)] {
-			d.rep.ui.log("%s: age-restricted on YouTube, trying %s %q (%s)", j.ev.Track, what, c.Title, c.URL)
+			d.rep.ui.log("%s: %s on YouTube, trying %s %q (%s)", j.ev.Track, why, what, c.Title, c.URL)
 			src, err := d.fetch(ctx, c.URL, j.work, j.tu, j.ev)
 			if err == nil {
 				j.url, j.ev.YouTubeURL = c.URL, c.URL
@@ -643,36 +660,63 @@ func (d *downloader) avoidAgeRestriction(ctx context.Context, j *trackJob, ageEr
 			if ctx.Err() != nil {
 				return download.Source{}, false
 			}
+			note(err)
 			slog.DebugContext(ctx, "alternative failed", "track", j.ev.Track, "url", c.URL, "err", err)
 		}
 		return download.Source{}, false
 	}
+	slog.DebugContext(ctx, "upload failed; alternatives", "track", j.ev.Track, "cause", cause, "count", len(j.alts))
 	if src, ok := try(j.alts, "another upload"); ok {
 		return src, nil
 	}
+	// The song's own version first: search wider before any clean edit.
+	if ctx.Err() == nil && !errors.Is(failed, ytdlp.ErrBotCheck) {
+		tried := map[string]bool{youtubeID(j.url): true}
+		for _, a := range j.alts[:min(len(j.alts), maxAlternatives)] {
+			tried[a.ID] = true
+		}
+		more, err := d.yt.MoreAlternatives(ctx, j.t, tried)
+		note(err)
+		slog.DebugContext(ctx, "wider search", "track", j.ev.Track, "count", len(more), "err", err)
+		if src, ok := try(more, "another upload"); ok {
+			return src, nil
+		}
+	}
 	if !j.t.Explicit || ctx.Err() != nil {
-		return download.Source{}, ageErr
+		return download.Source{}, failed
 	}
 
 	it := itunes.New("", d.cfg.Search.Country)
 	results, err := it.Search(ctx, itunes.CleanEditTerm(j.t))
 	if err != nil {
 		slog.DebugContext(ctx, "looking for a clean edit", "track", j.ev.Track, "err", err)
-		return download.Source{}, ageErr
+		return download.Source{}, failed
 	}
 	clean, ok := itunes.CleanEdit(j.t, results)
 	if !ok {
-		return download.Source{}, ageErr
+		slog.DebugContext(ctx, "no clean edit in the Apple catalog", "track", j.ev.Track)
+		return download.Source{}, failed
 	}
 	best, all, err := d.yt.Resolve(ctx, clean)
 	if err != nil {
-		return download.Source{}, ageErr
+		note(err)
+		slog.DebugContext(ctx, "matching the clean edit", "track", j.ev.Track, "clean", clean.Title, "err", err)
+		return download.Source{}, failed
 	}
 	if src, ok := try(append([]youtube.Scored{best}, youtube.Alternatives(clean, all, best)...), "the clean edit"); ok {
 		j.cleanEdit = clean.Title
 		return src, nil
 	}
-	return download.Source{}, ageErr
+	return download.Source{}, failed
+}
+
+// youtubeID is the video ID in a watch URL.
+func youtubeID(u string) string {
+	if _, id, ok := strings.Cut(u, "v="); ok {
+		id, _, _ = strings.Cut(id, "&")
+		return id
+	}
+	return u
 }
 
 // noticeAge shows how to get age-restricted songs, once a run: whether the
@@ -710,7 +754,7 @@ func (d *downloader) tag(ctx context.Context, j *trackJob) (*trackJob, bool, err
 	d.remember(ctx, j.t, j.dest)
 	j.ev.Warning = audio.QualityWarning(d.cfg.Format, d.cfg.Bitrate, j.src.Kbps, j.src.Codec)
 	if j.cleanEdit != "" {
-		warn := fmt.Sprintf("the explicit version is age-restricted on YouTube, so this is the clean edit (%q)", j.cleanEdit)
+		warn := fmt.Sprintf("YouTube wouldn't serve the explicit version, so this is the clean edit (%q)", j.cleanEdit)
 		j.ev.Warning = strings.TrimPrefix(j.ev.Warning+"; "+warn, "; ")
 	}
 	d.emit(j, "done")
@@ -805,7 +849,7 @@ func (d *downloader) fetch(ctx context.Context, url, work string, tu trackUI, ev
 				d.rep.emit(tu, e)
 			}
 		})
-		if err == nil || ctx.Err() != nil || errors.Is(err, ytdlp.ErrToolMissing) || errors.Is(err, ytdlp.ErrBotCheck) || errors.Is(err, ytdlp.ErrAgeRestricted) {
+		if err == nil || ctx.Err() != nil || errors.Is(err, ytdlp.ErrToolMissing) || errors.Is(err, ytdlp.ErrBotCheck) || errors.Is(err, ytdlp.ErrAgeRestricted) || errors.Is(err, ytdlp.ErrUnplayable) {
 			return src, err
 		}
 		if attempt >= d.cfg.DownloadRetries {

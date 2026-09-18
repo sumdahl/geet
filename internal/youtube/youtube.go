@@ -78,6 +78,40 @@ func (r *Resolver) Resolve(ctx context.Context, t spotify.Track) (Scored, []Scor
 	return best, all, err
 }
 
+// wideResults is how many results each search of MoreAlternatives reads.
+const wideResults = 10
+
+// MoreAlternatives searches wider for stand-ins when the chosen upload and
+// the first search's Alternatives all failed: the first page is often
+// crowded with the official upload, videos and edits, and YouTube's results
+// change from run to run (and per account, signed in). Two searches of 10
+// results, with the search query and with just "{artist} {title}", then
+// Alternatives by the same rules, leaving out uploads already tried.
+func (r *Resolver) MoreAlternatives(ctx context.Context, t spotify.Track, tried map[string]bool) ([]Scored, error) {
+	wide := *r
+	wide.opts.SearchResults = wideResults
+	var all []Scored
+	for _, q := range []string{r.opts.SearchQuery, "{artist} {title}"} {
+		cands, err := wide.Search(ctx, wide.fill(q, t))
+		if err != nil {
+			return nil, err
+		}
+		_, scored, _ := Best(t, cands, r.opts.MaxDurationDiff)
+		for _, s := range scored {
+			slog.DebugContext(ctx, "youtube candidate", "track", t.Title, "query", "wider: "+q, "id", s.ID, "title", s.Title,
+				"channel", s.Channel, "score", fmt.Sprintf("%.1f", s.Score), "reject", s.Reject)
+		}
+		all = append(all, scored...)
+	}
+	var out []Scored
+	for _, s := range Alternatives(t, all, Scored{}) {
+		if !tried[s.ID] {
+			out = append(out, s)
+		}
+	}
+	return out, nil
+}
+
 const (
 	// musicResults is how many YouTube Music song results are listed.
 	musicResults = 5
@@ -99,7 +133,7 @@ func (r *Resolver) resolveMusic(ctx context.Context, t spotify.Track) (Scored, [
 	out, err := r.opts.YtDlp.Run(ctx, "--flat-playlist", "--dump-json", "--no-warnings", "--no-progress",
 		"--playlist-items", "1-"+strconv.Itoa(musicResults), u)
 	if err != nil {
-		return Scored{}, nil, fmt.Errorf("searching YouTube Music for %q: %w", query, err)
+		return Scored{}, nil, fmt.Errorf("%w (searching YouTube Music for %q)", err, query)
 	}
 	listed, err := parseCandidates(bytes.NewReader(out))
 	if err != nil {
@@ -126,7 +160,8 @@ func (r *Resolver) resolveMusic(ctx context.Context, t spotify.Track) (Scored, [
 	// the output is read even when yt-dlp reports a failure.
 	out, err = r.opts.YtDlp.Run(ctx, append([]string{"--dump-json", "--skip-download", "--ignore-errors", "--no-warnings", "--no-progress"}, open...)...)
 	if err != nil && (ctx.Err() != nil || errors.Is(err, ytdlp.ErrToolMissing) || errors.Is(err, ytdlp.ErrBotCheck) || len(out) == 0) {
-		return Scored{}, nil, fmt.Errorf("reading YouTube Music results for %q: %w", query, err)
+		// The cause first: the per-track line is cut to the terminal's width.
+		return Scored{}, nil, fmt.Errorf("%w (reading YouTube Music results for %q)", err, query)
 	}
 	cands, err := parseCandidates(bytes.NewReader(out))
 	if err != nil {
@@ -193,7 +228,7 @@ func (r *Resolver) Search(ctx context.Context, query string) ([]Candidate, error
 	out, err := r.opts.YtDlp.Run(ctx, "--flat-playlist", "--dump-json", "--no-warnings", "--no-progress",
 		"ytsearch"+strconv.Itoa(r.opts.SearchResults)+":"+query)
 	if err != nil {
-		return nil, fmt.Errorf("searching %q: %w", query, err)
+		return nil, fmt.Errorf("%w (searching %q)", err, query)
 	}
 	return parseCandidates(bytes.NewReader(out))
 }
