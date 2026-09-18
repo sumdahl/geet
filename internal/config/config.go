@@ -23,8 +23,9 @@ import (
 var ErrInvalid = errors.New("invalid config")
 
 var (
-	formats = []string{"opus", "flac", "mp3"}
-	bitrate = regexp.MustCompile(`^[1-9][0-9]*k$`)
+	formats         = []string{"opus", "flac", "mp3"}
+	progressAnswers = []string{"auto", "always", "never"}
+	bitrate         = regexp.MustCompile(`^[1-9][0-9]*k$`)
 )
 
 type Config struct {
@@ -33,6 +34,7 @@ type Config struct {
 	Format         string  `toml:"format" json:"format"`
 	Bitrate        string  `toml:"bitrate" json:"bitrate"`
 	Overwrite      bool    `toml:"overwrite" json:"overwrite"`
+	Progress       string  `toml:"progress" json:"progress"`
 	Jobs           int     `toml:"jobs" json:"jobs"`
 	ResolveJobs    int     `toml:"resolve_jobs" json:"resolve_jobs"`
 	Spotify        Spotify `toml:"spotify" json:"spotify"`
@@ -81,6 +83,7 @@ func Default() Config {
 		Output:         "~/Music",
 		OutputTemplate: library.DefaultTemplate,
 		Format:         "opus",
+		Progress:       "auto",
 		Jobs:           4,
 		ResolveJobs:    8,
 		YouTube: YouTube{
@@ -162,6 +165,9 @@ func (c Config) Validate() error {
 	}
 	if !slices.Contains(formats, c.Format) {
 		errs = append(errs, fmt.Errorf("format %q must be one of %s", c.Format, strings.Join(formats, ", ")))
+	}
+	if !slices.Contains(progressAnswers, c.Progress) {
+		errs = append(errs, fmt.Errorf("progress %q must be one of %s", c.Progress, strings.Join(progressAnswers, ", ")))
 	}
 	if c.Bitrate != "" && !bitrate.MatchString(c.Bitrate) {
 		errs = append(errs, fmt.Errorf("bitrate %q must look like 320k, or be empty for best quality", c.Bitrate))

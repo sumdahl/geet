@@ -19,16 +19,23 @@ func TestFetch(t *testing.T) {
 	// --print template's fields.
 	script := `#!/bin/sh
 printf '%s\n' "$@" > "` + args + `"
-echo "[download] Destination: ignored progress line"
+echo "SPOTIFY-DL-PROGRESS 1024 4096 NA"
+echo "SPOTIFY-DL-PROGRESS 2048 NA 4100.5"
+echo "SPOTIFY-DL-PROGRESS 4096 4096 NA"
 printf '%s\topus\t152.303\n' "` + filepath.Join(dir, "source.webm") + `"
 `
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := Fetch(context.Background(), ytdlp.Runner{Binary: bin}, "https://www.youtube.com/watch?v=abc", dir)
+	var progress [][2]int64
+	got, err := Fetch(context.Background(), ytdlp.Runner{Binary: bin}, "https://www.youtube.com/watch?v=abc", dir,
+		func(done, total int64) { progress = append(progress, [2]int64{done, total}) })
 	if err != nil {
 		t.Fatal(err)
+	}
+	if want := [][2]int64{{1024, 4096}, {2048, 4100}, {4096, 4096}}; !reflect.DeepEqual(progress, want) {
+		t.Errorf("progress %v, want %v", progress, want)
 	}
 	want := Source{Path: filepath.Join(dir, "source.webm"), Codec: "opus", Kbps: 152.303}
 	if got != want {
@@ -39,7 +46,9 @@ printf '%s\topus\t152.303\n' "` + filepath.Join(dir, "source.webm") + `"
 	gotArgs := strings.Split(strings.TrimSpace(string(raw)), "\n")
 	wantArgs := []string{
 		"--format", "bestaudio[acodec=opus]/bestaudio",
-		"--no-playlist", "--no-warnings", "--no-progress",
+		"--no-playlist", "--no-warnings",
+		"--progress", "--newline",
+		"--progress-template", "download:SPOTIFY-DL-PROGRESS %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s",
 		"--output", filepath.Join(dir, "source.%(ext)s"),
 		"--print", "after_move:%(filepath)s\t%(acodec)s\t%(abr)s",
 		"--", "https://www.youtube.com/watch?v=abc",

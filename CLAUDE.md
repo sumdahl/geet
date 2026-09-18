@@ -47,6 +47,10 @@ A Go CLI that takes a Spotify track, album or playlist URL, gets its metadata (s
 - `internal/download`: fetches the raw best audio only. It deliberately avoids `--extract-audio`, which ignores the requested bitrate when the codecs match.
 - `internal/audio`: one ffmpeg pass that converts or copies, tags and embeds the cover (see docs/01 §4 for the opus cover and argument-length details). Its round-trip tests run real ffmpeg on a generated tone and skip when ffmpeg is missing.
 - `cmd/spotify-dl/download.go`: the per-track stages and the NDJSON `event` type. Only ever add event fields; docs/03 has the schema.
+- `cmd/spotify-dl/ui.go`: the stderr display, using mpb bars (`barUI`) in a terminal and plain lines (`plainUI`) otherwise.
+  - A finished track's bar is removed and a permanent result line is logged above the live area, because mpb never draws a bar that completes before its first refresh.
+  - Never call into a `*mpb.Bar` while holding `barTrack.mu`: the render goroutine takes that lock in `status`.
+  - To test the animation headlessly, the pty needs a size: `script -qefc "stty cols 150 rows 40; <cmd>" /dev/null`. With 0 rows mpb draws nothing.
 - `cmd/spotify-dl`: the subcommands `download <url>` and `watch`. `watch` is a daemon that polls `wl-paste` (Wayland, not xclip) about once a second and sends a `notify-send` notification with the cover art. Flags: `--format --output --bitrate --jobs --resolve-jobs --json`.
 
 ## Playlist pipeline

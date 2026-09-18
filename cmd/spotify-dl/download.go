@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/sumdahl/spotify-dl/internal/audio"
 	"github.com/sumdahl/spotify-dl/internal/config"
@@ -25,58 +26,59 @@ import (
 // event is one NDJSON line of the --json contract (docs/03-communication-
 // contract.md). Fields are only ever added, never renamed or removed.
 type event struct {
-	Track      string `json:"track"`
-	Stage      string `json:"stage"` // resolved|downloading|tagging|done|failed
-	Error      string `json:"error,omitempty"`
-	Fatal      bool   `json:"fatal,omitempty"` // the whole run stopped, not just this track
-	SpotifyID  string `json:"spotify_id,omitempty"`
-	Index      int    `json:"index,omitempty"` // 1-based position in the request
-	Total      int    `json:"total,omitempty"`
-	YouTubeURL string `json:"youtube_url,omitempty"`
-	Path       string `json:"path,omitempty"`
-	Skipped    bool   `json:"skipped,omitempty"` // done without downloading: the file already existed
-	Warning    string `json:"warning,omitempty"`
+	Track      string  `json:"track"`
+	Stage      string  `json:"stage"` // resolved|downloading|tagging|done|failed
+	Error      string  `json:"error,omitempty"`
+	Fatal      bool    `json:"fatal,omitempty"` // the whole run stopped, not just this track
+	SpotifyID  string  `json:"spotify_id,omitempty"`
+	Index      int     `json:"index,omitempty"` // 1-based position in the request
+	Total      int     `json:"total,omitempty"`
+	YouTubeURL string  `json:"youtube_url,omitempty"`
+	Path       string  `json:"path,omitempty"`
+	Skipped    bool    `json:"skipped,omitempty"` // done without downloading: the file already existed
+	Warning    string  `json:"warning,omitempty"`
+	Progress   float64 `json:"progress,omitempty"` // repeated "downloading" events: 0.1 … 1.0
 }
 
-// reporter writes NDJSON to stdout when --json is set and human-readable
-// progress to stderr always.
+// reporter sends each event to the NDJSON stream (when --json) and to the
+// human display. Safe for concurrent use.
 type reporter struct {
+	ui ui
+
+	mu     sync.Mutex
 	json   *json.Encoder
-	human  io.Writer
 	warned map[string]bool
 }
 
-func (r *reporter) emit(e event) {
+func (r *reporter) emit(tu trackUI, e event) {
+	r.mu.Lock()
 	if r.json != nil {
 		if err := r.json.Encode(e); err != nil {
 			slog.Error("writing progress", "err", err)
 		}
 	}
-	switch e.Stage {
-	case "resolved":
-		fmt.Fprintf(r.human, "       match  %s\n", e.YouTubeURL)
-	case "done":
-		verb := "saved "
-		if e.Skipped {
-			verb = "exists"
-		}
-		fmt.Fprintf(r.human, "       %s %s\n", verb, e.Path)
-	case "failed":
-		fmt.Fprintf(r.human, "       ✗ %s\n", e.Error)
-	}
-	// Every track gets its warning in the NDJSON, but a human needs to read
-	// the same one only once per run.
-	if e.Warning != "" && !r.warned[e.Warning] {
+	// Every track carries its warning in the NDJSON, but a human needs to
+	// read the same one only once per run.
+	warn := e.Warning != "" && !r.warned[e.Warning]
+	if warn {
 		r.warned[e.Warning] = true
-		fmt.Fprintf(r.human, "warning: %s\n", e.Warning)
+	}
+	r.mu.Unlock()
+
+	tu.stage(e)
+	if warn {
+		r.ui.log("warning: %s", e.Warning)
 	}
 }
 
 func (r *reporter) fatal(err error) int {
+	r.ui.close(true)
+	r.mu.Lock()
 	if r.json != nil {
 		r.json.Encode(event{Stage: "failed", Error: err.Error(), Fatal: true})
 	}
-	fmt.Fprintf(r.human, "spotify-dl: %v\n", err)
+	r.mu.Unlock()
+	fmt.Fprintf(r.ui.writer(), "spotify-dl: %v\n", err)
 	return exitFatal
 }
 
@@ -93,11 +95,12 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		c.fs.Usage()
 		return exitFatal
 	}
-	setupLogging(stderr, c.verbose)
-	rep := &reporter{human: stderr, warned: map[string]bool{}}
+	// The display depends on config, so config errors go out plainly.
+	rep := &reporter{ui: &plainUI{w: stderr}, warned: map[string]bool{}}
 	if c.json {
 		rep.json = json.NewEncoder(stdout)
 	}
+	setupLogging(stderr, c.verbose)
 
 	cfg, _, err := c.load()
 	if err != nil {
@@ -113,16 +116,18 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		}
 	}
 
+	fmt.Fprintf(stderr, "Reading %s %s from Spotify…\n", ref.Kind, ref.ID)
 	tracks, err := resolveMetadata(ctx, cfg, ref)
 	if err != nil {
 		return rep.fatal(err)
 	}
-	fmt.Fprintf(stderr, "%s %s: %d track(s) → %s\n", ref.Kind, ref.ID, len(tracks), cfg.Output)
+	fmt.Fprintf(stderr, "%d track(s) → %s\n", len(tracks), cfg.Output)
 
+	rep.ui = chooseUI(cfg.Progress, stderr, c.json)
+	setupLogging(rep.ui.writer(), c.verbose)
 	d := newDownloader(cfg, rep)
 	failed := 0
 	for i, t := range tracks {
-		fmt.Fprintf(stderr, "[%d/%d] %s\n", i+1, len(tracks), trackName(t))
 		err := d.track(ctx, t, i+1, len(tracks))
 		switch {
 		case err == nil:
@@ -135,6 +140,8 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		}
 	}
 
+	rep.ui.close(false)
+	setupLogging(stderr, c.verbose)
 	if failed > 0 {
 		fmt.Fprintf(stderr, "%d of %d track(s) failed\n", failed, len(tracks))
 		return exitPartial
@@ -173,10 +180,11 @@ func newDownloader(cfg config.Config, rep *reporter) *downloader {
 // reporting each stage. A returned error has already been reported.
 func (d *downloader) track(ctx context.Context, t spotify.Track, index, total int) (err error) {
 	ev := event{Track: trackName(t), SpotifyID: t.ID, Index: index, Total: total}
+	tu := d.rep.ui.track(index, total, ev.Track)
 	emit := func(stage string) {
 		e := ev
 		e.Stage = stage
-		d.rep.emit(e)
+		d.rep.emit(tu, e)
 	}
 	defer func() {
 		if err != nil && ctx.Err() == nil {
@@ -214,7 +222,22 @@ func (d *downloader) track(ctx context.Context, t spotify.Track, index, total in
 	defer os.RemoveAll(work)
 
 	emit("downloading")
-	src, err := download.Fetch(ctx, d.ytd, best.URL, work)
+	// NDJSON gets a "downloading" event per 10% step: enough for a
+	// consumer's progress bar without flooding the pipe.
+	lastStep := 0
+	src, err := download.Fetch(ctx, d.ytd, best.URL, work, func(done, size int64) {
+		tu.progress(done, size)
+		if size <= 0 {
+			return
+		}
+		if step := int(done * 10 / size); step > lastStep {
+			lastStep = step
+			e := ev
+			e.Stage = "downloading"
+			e.Progress = float64(step) / 10
+			d.rep.emit(tu, e)
+		}
+	})
 	if err != nil {
 		return err
 	}

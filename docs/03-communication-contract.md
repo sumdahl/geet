@@ -3,6 +3,9 @@
 This is the interface the plugin (`04-plugin-spec.md`) consumes — treat it
 as a stable API even before the plugin exists.
 
+- stderr is for humans: animated bars in a terminal, plain lines otherwise
+  (setting `progress`: `auto`|`always`|`never`; `auto` never animates with
+  `--json`). Never parse stderr.
 - Every subcommand supports `--json`: on success, NDJSON (one JSON object
   per line) on stdout for multi-track/streaming operations; nothing else
   goes to stdout. Human-readable progress/logs go to stderr only, so the
@@ -28,6 +31,7 @@ as a stable API even before the plugin exists.
   | `youtube_url` | from `resolved` on |
   | `skipped` | `done` for an existing file |
   | `warning` | `done`, when the requested format/bitrate can't beat YouTube's source (FLAC, or a bitrate >10% above it) |
+  | `progress` | repeated `downloading` events, one per 10% step: `0.1` … `1` (the first `downloading` event has none) |
 
   Fields are only ever added, never renamed or removed; consumers must
   ignore unknown fields. Absent optional fields mean false/empty.

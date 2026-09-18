@@ -26,6 +26,7 @@ func (c *Config) Settings() []Setting {
 		{Key: "format", Usage: "audio format: opus, flac or mp3", ptr: &c.Format},
 		{Key: "bitrate", Usage: `audio bitrate such as 320k; empty means best available`, ptr: &c.Bitrate},
 		{Key: "overwrite", Usage: "re-download tracks whose file already exists instead of skipping them", ptr: &c.Overwrite},
+		{Key: "progress", Usage: "animated progress bars: auto (only in a terminal, and not with --json), always or never", ptr: &c.Progress},
 		{Key: "jobs", Usage: "concurrent downloads", ptr: &c.Jobs},
 		{Key: "resolve_jobs", Usage: "concurrent YouTube lookups", ptr: &c.ResolveJobs},
 		{Key: "spotify.client_id", Usage: "Spotify Web API client ID (optional; needs Premium)", ptr: &c.Spotify.ClientID},

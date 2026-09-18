@@ -22,20 +22,58 @@ type Source struct {
 	Kbps  float64 // 0 when YouTube doesn't say
 }
 
+// progressPrefix marks yt-dlp's progress lines on stdout, where the final
+// --print line also goes.
+const progressPrefix = "SPOTIFY-DL-PROGRESS "
+
 // Fetch downloads url's best audio into dir. Opus is preferred: it is
 // YouTube's highest-quality audio (~150 kbps) and can be kept without
-// re-encoding when the target is opus too.
-func Fetch(ctx context.Context, y ytdlp.Runner, url, dir string) (Source, error) {
-	out, err := y.Run(ctx,
+// re-encoding when the target is opus too. onProgress, if set, gets bytes
+// done and the total (0 when unknown) as the download runs.
+func Fetch(ctx context.Context, y ytdlp.Runner, url, dir string, onProgress func(done, total int64)) (Source, error) {
+	var result string
+	err := y.RunLines(ctx, func(line string) {
+		rest, ok := strings.CutPrefix(line, progressPrefix)
+		if !ok {
+			result = line
+			return
+		}
+		if onProgress != nil {
+			if done, total, ok := parseProgress(rest); ok {
+				onProgress(done, total)
+			}
+		}
+	},
 		"--format", "bestaudio[acodec=opus]/bestaudio",
-		"--no-playlist", "--no-warnings", "--no-progress",
+		"--no-playlist", "--no-warnings",
+		"--progress", "--newline",
+		"--progress-template", "download:"+progressPrefix+"%(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s",
 		"--output", filepath.Join(dir, "source.%(ext)s"),
 		"--print", "after_move:%(filepath)s\t%(acodec)s\t%(abr)s",
 		"--", url)
 	if err != nil {
 		return Source{}, fmt.Errorf("downloading %s: %w", url, err)
 	}
-	return parsePrint(string(out))
+	return parsePrint(result)
+}
+
+// parseProgress reads "downloaded total estimate"; yt-dlp prints "NA" for
+// whichever total it doesn't know.
+func parseProgress(s string) (done, total int64, ok bool) {
+	f := strings.Fields(s)
+	if len(f) != 3 {
+		return 0, 0, false
+	}
+	done, err := strconv.ParseInt(f[0], 10, 64)
+	if err != nil {
+		return 0, 0, false
+	}
+	for _, t := range f[1:] {
+		if v, err := strconv.ParseFloat(t, 64); err == nil && v > 0 {
+			return done, int64(v), true
+		}
+	}
+	return done, 0, true
 }
 
 func parsePrint(out string) (Source, error) {
