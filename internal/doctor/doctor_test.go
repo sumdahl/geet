@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sumdahl/geet/internal/config"
+	"github.com/sumdahl/geet/internal/spotify"
 	"github.com/sumdahl/geet/internal/ytdlp"
 )
 
@@ -189,6 +190,19 @@ func TestRunOffline(t *testing.T) {
 	for _, c := range checks {
 		if c.Name == "config" && (c.Status != Fail || !strings.Contains(c.Fix, "c.toml")) {
 			t.Errorf("broken config: %+v", c)
+		}
+	}
+}
+
+func TestSpotifyFix(t *testing.T) {
+	for err, want := range map[error]string{
+		fmt.Errorf("fetching track x: %w (HTTP 429)", spotify.ErrRateLimited): "rate-limiting",
+		errors.New("fetching track x: https://…: HTTP 429"):                   "rate-limiting",
+		fmt.Errorf("x: %w", spotify.ErrPageFormat):                            "changed its public pages",
+		errors.New("dial tcp: no such host"):                                  "internet connection",
+	} {
+		if got := spotifyFix(err); !strings.Contains(got, want) {
+			t.Errorf("spotifyFix(%v) = %q, want it to mention %q", err, got, want)
 		}
 	}
 }

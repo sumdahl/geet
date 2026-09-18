@@ -391,6 +391,8 @@ func spotifyFix(err error) string {
 		return "Spotify changed its public pages; update geet (or report it)"
 	case errors.Is(err, spotify.ErrAuth):
 		return "check spotify.client_id and spotify.client_secret, or remove them to use the keyless pages"
+	case errors.Is(err, spotify.ErrRateLimited), strings.Contains(err.Error(), "HTTP 429"):
+		return "Spotify is rate-limiting this IP after many requests: wait 10-30 minutes; lowering resolve_jobs (e.g. 8) makes it less likely"
 	}
 	return networkFix(err)
 }
