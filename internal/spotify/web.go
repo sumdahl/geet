@@ -54,7 +54,18 @@ type Web struct {
 
 	mu     sync.Mutex
 	albums map[string]*webAlbum
+
+	// cooldown is when requests may resume after Spotify answered 429.
+	// Shared by every worker: if each backed off on its own, the others
+	// would keep hitting Spotify and prolong the limit.
+	coolMu   sync.Mutex
+	cooldown time.Time
+	// backoff is the first wait after a 429 when Spotify doesn't say
+	// (Retry-After); later attempts double it. Tests shorten it.
+	backoff time.Duration
 }
+
+var ErrRateLimited = errors.New("Spotify is rate-limiting requests")
 
 type webAlbum struct {
 	name   string
@@ -71,6 +82,7 @@ func NewWeb(baseURL string) *Web {
 		http:    &http.Client{Timeout: 30 * time.Second},
 		baseURL: strings.TrimRight(baseURL, "/"),
 		albums:  make(map[string]*webAlbum),
+		backoff: 2 * time.Second,
 	}
 }
 
@@ -191,20 +203,28 @@ func (w *Web) Playlist(ctx context.Context, id string) (name string, tracks []Tr
 		}
 		ids = append(ids, itemID(it))
 	}
-	tracks, err = w.Tracks(ctx, ids)
+	tracks, _, err = w.Tracks(ctx, ids)
 	return e.Name, tracks, len(e.TrackList) >= embedPlaylistCap, err
 }
 
 // Tracks reads each track by ID, Workers at a time, keeping the given order.
-// Tracks Spotify no longer has are skipped with a warning.
-func (w *Web) Tracks(ctx context.Context, ids []string) ([]Track, error) {
+// A track that can't be read (Spotify no longer has it, or it stays
+// rate-limited) is skipped with a warning rather than failing the rest; the
+// returned skipped count says how many. Only cancellation, or every track
+// failing, is an error.
+func (w *Web) Tracks(ctx context.Context, ids []string) (tracks []Track, skipped int, err error) {
 	results := make([]*Track, len(ids))
 	var mu sync.Mutex
 	done := 0
-	progress := func() {
+	var lastErr error
+	progress := func(err error) {
 		mu.Lock()
 		defer mu.Unlock()
 		done++
+		if err != nil {
+			skipped++
+			lastErr = err
+		}
 		if w.OnProgress != nil {
 			w.OnProgress(done, len(ids))
 		}
@@ -216,29 +236,33 @@ func (w *Web) Tracks(ctx context.Context, ids []string) ([]Track, error) {
 	g.SetLimit(max(w.Workers, 1))
 	for i, id := range ids {
 		g.Go(func() error {
-			defer progress()
 			t, err := w.Track(gctx, id)
-			if errors.Is(err, ErrNotFound) {
+			switch {
+			case gctx.Err() != nil:
+				return gctx.Err()
+			case errors.Is(err, ErrNotFound):
 				slog.WarnContext(gctx, "skipping a track Spotify no longer has", "id", id)
-				return nil
+			case err != nil:
+				slog.WarnContext(gctx, "skipping a track that couldn't be read", "id", id, "err", err)
+			default:
+				results[i] = &t
 			}
-			if err != nil {
-				return err
-			}
-			results[i] = &t
+			progress(err)
 			return nil
 		})
 	}
 	if err := g.Wait(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	var tracks []Track
+	if len(ids) > 0 && skipped == len(ids) && !errors.Is(lastErr, ErrNotFound) {
+		return nil, skipped, fmt.Errorf("couldn't read any of the %d tracks: %w", len(ids), lastErr)
+	}
 	for _, t := range results {
 		if t != nil {
 			tracks = append(tracks, *t)
 		}
 	}
-	return tracks, nil
+	return tracks, skipped, nil
 }
 
 var itemCount = regexp.MustCompile(`(\d[\d,]*) (?:items?|songs?)`)
@@ -383,11 +407,15 @@ func (w *Web) trackMeta(ctx context.Context, id string) (map[string][]string, er
 	return meta, nil
 }
 
-// fetch GETs u, retrying a few times when Spotify rate-limits (HTTP 429),
-// which parallel playlist reads can trigger.
+// fetch GETs u. When Spotify answers 429 (too many requests), every worker
+// pauses until the shared cooldown ends (Spotify's Retry-After, or a
+// doubling backoff), then retries, up to rateLimitAttempts times.
 func (w *Web) fetch(ctx context.Context, u, userAgent string) ([]byte, error) {
-	const attempts = 4
+	const rateLimitAttempts = 6
 	for attempt := 1; ; attempt++ {
+		if err := w.waitCooldown(ctx); err != nil {
+			return nil, err
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 		if err != nil {
 			return nil, err
@@ -398,16 +426,19 @@ func (w *Web) fetch(ctx context.Context, u, userAgent string) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		if resp.StatusCode == http.StatusTooManyRequests && attempt < attempts {
-			wait := retryAfter(resp.Header.Get("Retry-After")) * time.Duration(attempt)
+		if resp.StatusCode == http.StatusTooManyRequests {
 			resp.Body.Close()
-			slog.DebugContext(ctx, "spotify rate limited", "url", u, "retry_in", wait)
-			select {
-			case <-time.After(wait):
-				continue
-			case <-ctx.Done():
-				return nil, ctx.Err()
+			if attempt >= rateLimitAttempts {
+				return nil, fmt.Errorf("%s: %w (HTTP 429)", u, ErrRateLimited)
 			}
+			wait := w.backoff << (attempt - 1)
+			if h := resp.Header.Get("Retry-After"); h != "" {
+				wait = max(wait, retryAfter(h))
+			}
+			wait = min(wait, maxRetryAfter)
+			slog.DebugContext(ctx, "spotify rate limited", "url", u, "attempt", attempt, "retry_in", wait)
+			w.setCooldown(wait)
+			continue
 		}
 		defer resp.Body.Close()
 		switch {
@@ -417,6 +448,29 @@ func (w *Web) fetch(ctx context.Context, u, userAgent string) ([]byte, error) {
 			return nil, fmt.Errorf("%s: HTTP %d", u, resp.StatusCode)
 		}
 		return io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	}
+}
+
+func (w *Web) setCooldown(d time.Duration) {
+	w.coolMu.Lock()
+	defer w.coolMu.Unlock()
+	if until := time.Now().Add(d); until.After(w.cooldown) {
+		w.cooldown = until
+	}
+}
+
+func (w *Web) waitCooldown(ctx context.Context) error {
+	w.coolMu.Lock()
+	wait := time.Until(w.cooldown)
+	w.coolMu.Unlock()
+	if wait <= 0 {
+		return nil
+	}
+	select {
+	case <-time.After(wait):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 

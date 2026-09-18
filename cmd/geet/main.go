@@ -380,9 +380,12 @@ func resolveList(ctx context.Context, cfg config.Config, links []string, report 
 	web := spotify.NewWeb("")
 	web.Workers = cfg.ResolveJobs
 	web.OnProgress = func(done, total int) { report("spotify", done, total) }
-	found, err := web.Tracks(ctx, spotifyIDs)
+	found, skipped, err := web.Tracks(ctx, spotifyIDs)
 	if err != nil {
 		return nil, err
+	}
+	if skipped > 0 {
+		slog.WarnContext(ctx, fmt.Sprintf("%d of %d songs couldn't be read from Spotify and are skipped; run the same command again to get them", skipped, len(spotifyIDs)))
 	}
 	byID := make(map[string]spotify.Track, len(found))
 	for _, t := range found {

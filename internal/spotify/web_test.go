@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -153,7 +154,9 @@ func TestWebRetriesRateLimit(t *testing.T) {
 		rw.Write(body)
 	}))
 	defer srv.Close()
-	tracks, err := NewWeb(srv.URL).Album(context.Background(), "alb")
+	w := NewWeb(srv.URL)
+	w.backoff = time.Millisecond
+	tracks, err := w.Album(context.Background(), "alb")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,9 +220,12 @@ func TestWebPlaylistNotTruncated(t *testing.T) {
 func TestWebTracksKeepsOrderAndSkipsGone(t *testing.T) {
 	w := newTestWeb(t)
 	w.Workers = 4
-	got, err := w.Tracks(context.Background(), []string{"tx", "gone", "t2", "t1"})
+	got, skipped, err := w.Tracks(context.Background(), []string{"tx", "gone", "t2", "t1"})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if skipped != 1 {
+		t.Errorf("skipped %d, want 1 (the gone track)", skipped)
 	}
 	var ids []string
 	for _, tr := range got {
@@ -227,5 +233,56 @@ func TestWebTracksKeepsOrderAndSkipsGone(t *testing.T) {
 	}
 	if want := []string{"tx", "t2", "t1"}; !reflect.DeepEqual(ids, want) {
 		t.Errorf("ids %v, want %v", ids, want)
+	}
+}
+
+// Spotify answers 429 to a burst of reads: the workers pause together and
+// every track still arrives; a track that stays limited is skipped, not
+// fatal.
+func TestWebTracksRateLimited(t *testing.T) {
+	album, _ := os.ReadFile(filepath.Join("testdata", "embed_album.html"))
+	pages := map[string][]byte{}
+	for _, id := range []string{"t1", "t2"} {
+		pages[id], _ = os.ReadFile(filepath.Join("testdata", "page_"+id+".html"))
+	}
+	var calls, limited atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := calls.Add(1)
+		if strings.HasSuffix(r.URL.Path, "/always-limited") || n%3 == 0 { // every third request, and one track forever
+			limited.Add(1)
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		switch r.URL.Path {
+		case "/embed/album/alb":
+			w.Write(album)
+		case "/track/t1":
+			w.Write(pages["t1"])
+		case "/track/t2":
+			w.Write(pages["t2"])
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	w := NewWeb(srv.URL)
+	w.Workers = 4
+	w.backoff = time.Millisecond
+	got, skipped, err := w.Tracks(context.Background(), []string{"t1", "t2", "always-limited", "t1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 || skipped != 1 {
+		t.Errorf("got %d tracks, %d skipped; want 3 and 1 (the permanently limited one)", len(got), skipped)
+	}
+	if limited.Load() == 0 {
+		t.Fatal("the test server never rate-limited")
+	}
+
+	// Every track failing is an error, not an empty success.
+	_, _, err = w.Tracks(context.Background(), []string{"always-limited"})
+	if !errors.Is(err, ErrRateLimited) {
+		t.Errorf("all limited: err = %v", err)
 	}
 }
