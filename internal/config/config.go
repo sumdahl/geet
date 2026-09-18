@@ -161,7 +161,11 @@ func Load(path string, flags map[string]string) (Config, error) {
 		return Config{}, fmt.Errorf("reading %s: %w", path, err)
 	default:
 		if undec := md.Undecoded(); len(undec) > 0 {
-			return Config{}, fmt.Errorf("%s: %w: unknown key %q", path, ErrInvalid, undec[0].String())
+			key := undec[0].String()
+			if known := misplaced(cfg, key); known != "" {
+				return Config{}, fmt.Errorf("%s: %w: unknown key %q: %q is a setting, but below a [section] header it belongs to that section; move it above the first [section] header", path, ErrInvalid, key, known)
+			}
+			return Config{}, fmt.Errorf("%s: %w: unknown key %q", path, ErrInvalid, key)
 		}
 	}
 
@@ -192,6 +196,20 @@ func Load(path string, flags map[string]string) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+// misplaced finds the setting an unknown key was meant to be: "jobs"
+// written below a [tools] header decodes as "tools.jobs".
+func misplaced(c Config, key string) string {
+	for parts := strings.Split(key, "."); len(parts) > 1; parts = parts[1:] {
+		suffix := strings.Join(parts[1:], ".")
+		for _, s := range c.Settings() {
+			if s.Key == suffix {
+				return suffix
+			}
+		}
+	}
+	return ""
 }
 
 func (c Config) HasAPICredentials() bool {

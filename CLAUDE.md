@@ -53,7 +53,8 @@ Linux is the target and macOS is best effort, where everything but `watch` (Wayl
 - `internal/config`: the engine is a backend for the Omarchy plugin, so everything is configurable.
   - `Config.Settings()` is the single list: each entry is automatically a TOML key, a `--flag` and a `GEET_*` env variable (precedence flag > env > file > default), and is listed by `geet config settings --json`.
   - To add a setting, add the struct field and one `Settings()` entry. `TestSettingsCoverConfig` fails if you forget the entry.
-  - The config file is optional. Unknown keys in it are an error.
+  - The config file is optional. Unknown keys in it are an error, and `misplaced` hints when a setting sits under the wrong `[section]`.
+  - `config.Template` (`geet config init`, run by the installer when no file exists) lists every setting from `Settings()` commented out, with full dotted keys and no `[table]` headers, so a line appended at the end can't land in the last table. `TestTemplateListsEverySetting` uncomments each line and checks it loads.
 - `internal/spotify` and `internal/deezer`: built. See "Metadata sources".
 - **Explicit first, clean as a fallback** (the user's rule).
   - `Track.Explicit` comes from Spotify's embed `isExplicit`, the Spotify API's `explicit`, and iTunes `trackExplicitness`. It's part of the cache, so bump `cacheVersion` if `Track` changes.

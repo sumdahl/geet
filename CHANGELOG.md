@@ -7,6 +7,16 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Added
+- The installer creates the config file (`~/.config/geet/config.toml`; on
+  macOS `~/Library/Application Support/geet/config.toml`) with every
+  setting listed at its default under its explanation, commented out:
+  uncomment a line to change it. An existing file is never touched. `geet
+  config init` writes the same file (`--force` replaces one). Keys are
+  written in full (`youtube.search_results`), so a setting added anywhere,
+  even at the end of the file, works; a setting under the wrong `[section]`
+  gets an error saying where it belongs.
+
 ### Fixed
 - An explicit song whose official upload YouTube won't serve now still
   comes as the explicit version. In 0.4.0, Enrique Iglesias's "Tonight

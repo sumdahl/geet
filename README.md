@@ -317,21 +317,28 @@ Every setting can be given in three ways. When the same setting is set in more t
 
 1. **Flag:** `--youtube-search-results 8`
 2. **Environment variable:** `GEET_YOUTUBE_SEARCH_RESULTS=8`
-3. **Config file:** `~/.config/geet/config.toml` (or `$GEET_CONFIG`, or `--config`). The file is optional, and an unknown key in it is an error.
+3. **Config file:** `~/.config/geet/config.toml` on Linux, `~/Library/Application Support/geet/config.toml` on macOS (or `$GEET_CONFIG`, or `--config`). `geet config path` prints where it is.
+
+**The installer creates the config file** with every setting listed at its default, each under a short explanation and commented out. To change a setting, remove the `# ` in front of its line and edit the value:
 
 ```toml
-output = "~/Music"
-format = "opus"
-jobs = 8
-playlist_folder_case = "title"
+# ---- General ----------------------------------------------------------
 
-[youtube]
-cookies_from_browser = "firefox"   # for age-restricted videos
+# concurrent downloads
+jobs = 16                       # was: # jobs = 4
 
-[spotify]                          # optional: official Web API (needs Premium)
-client_id = "..."
-client_secret = "..."
+# ---- YouTube ----------------------------------------------------------
+
+# send your YouTube sign-in from a browser, to get past "confirm you're not
+# a bot": auto (the default browser), or brave, chromium, chrome, firefox, …
+youtube.cookies_from_browser = "auto"
 ```
+
+- **Commented lines keep geet's defaults,** including when a new version improves them.
+- **Keys are written in full** (`youtube.cookies_from_browser`), so a line works wherever you put it, even appended at the end.
+- **Your file is never overwritten,** by the installer or anything else. Without the installer, or to start over, run `geet config init` (`--force` replaces an existing file).
+- **Mistakes are errors, not silently ignored.** An unknown key is an error, and a setting placed under the wrong `[section]` gets a hint saying where it belongs.
+- `geet config` shows the values in effect.
 
 | Key | Flag | Type | Default | What it does |
 |---|---|---|---|---|

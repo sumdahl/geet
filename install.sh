@@ -586,6 +586,29 @@ add_to_path() {
 	printf '\n# Added by the geet installer\n%s\n' "$line" >>"$file"
 }
 
+# config_file is where geet reads its settings (geet config path).
+config_file() {
+	if [ -n "${GEET_CONFIG:-}" ]; then
+		printf '%s' "$GEET_CONFIG"
+	elif [ "$os" = darwin ]; then
+		printf '%s' "$HOME/Library/Application Support/geet/config.toml"
+	else
+		printf '%s' "${XDG_CONFIG_HOME:-$HOME/.config}/geet/config.toml"
+	fi
+}
+
+# write_config creates the settings file with every setting listed at its
+# default, commented out, for the user to edit.
+write_config() {
+	"$dir/geet" config init >/dev/null
+}
+
+# has_config_init: releases before 0.4.1 have no "geet config init"; with
+# one of those there's no settings file, and geet runs on its defaults.
+has_config_init() {
+	"$dir/geet" help 2>/dev/null | grep -q "config init"
+}
+
 on_path() {
 	case ":$2:" in *":$1:"*) return 0 ;; esac
 	return 1
@@ -765,6 +788,9 @@ main() {
 
 	path_step=""
 	if [ -n "$interactive" ] && ! on_path "$dir" "$PATH"; then path_step=ask; fi
+	cfg=$(config_file)
+	config_step=""
+	if [ ! -e "$cfg" ]; then config_step=1; fi
 
 	# ---- plan
 	heading "Plan"
@@ -781,6 +807,7 @@ main() {
 	if [ -n "$skipped" ]; then
 		printf '  %s!%s not installing%s: geet needs them to download\n' "$c_yellow" "$c_off" "$skipped"
 	fi
+	if [ -n "$config_step" ]; then bullet "settings file $(pretty "$cfg"), every setting listed to customise"; fi
 	if [ -n "$path_step" ]; then bullet "add $(pretty "$dir") to your PATH in $(pretty "$(rc_file)")"; fi
 
 	if [ -n "$interactive" ]; then
@@ -792,6 +819,14 @@ main() {
 	heading "Installing"
 	failed=""
 	spin "geet $version" install_geet || fail "geet couldn't be installed (see above)"
+	if [ -n "$config_step" ]; then
+		if has_config_init; then
+			spin "settings file $(pretty "$cfg")" write_config || config_step=""
+		else
+			say "  ${c_dim}geet $version has no settings file; it runs on its defaults${c_off}"
+			config_step=""
+		fi
+	fi
 	if [ -n "$ytdlp_binary" ]; then
 		spin "yt-dlp (official build)" install_ytdlp_binary || failed="$failed yt-dlp"
 	fi
@@ -863,6 +898,10 @@ main() {
 	say "    geet doctor                   ${c_dim}checks that everything works${c_off}"
 	say "    geet search blinding lights   ${c_dim}finds a song and downloads it${c_off}"
 	say "    geet download <spotify link>  ${c_dim}a song, an album or a playlist${c_off}"
+	if [ -e "$cfg" ]; then
+		say ""
+		say "  Settings (jobs, format, output folder, ...): $(pretty "$cfg")"
+	fi
 	say ""
 	[ -z "$failed" ]
 }
