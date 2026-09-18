@@ -56,6 +56,7 @@ Releases follow [Semantic Versioning](https://semver.org/), and the changes are 
 ```sh
 geet download <spotify-url>        # a track, album or playlist
 geet search <words…>               # find a song by name, pick it, download it
+geet doctor                        # health check: tools, setup, services, and how to fix problems
 geet config                        # effective configuration (TOML; --json for JSON)
 geet config path                   # where the config file lives
 geet config settings               # every setting with its flag and env variable
@@ -108,6 +109,37 @@ Download 1 song? [Y/n]
 - Limits:
   - Apple's public catalog lists some explicit songs only as clean edits, whose titles are censored too ("umean" for Gunna's "fukumean"). These are marked `(clean)`, and matching still finds the right upload.
   - A few labels' catalogs aren't searchable from some regions. For those, use the Spotify link.
+
+### Health check
+
+When downloads start failing, run `geet doctor`. It checks everything geet depends on outside its own code, in about 2 seconds, and says how to fix whatever is broken:
+
+```
+$ geet doctor
+Tools
+  ✓ yt-dlp     2026.08.19 (30 days old)
+  ✓ ffmpeg     9.0.1 (opus ✓ mp3 ✓ flac ✓)
+  ✓ ffprobe    9.0.1
+  ✓ fzf        0.74.3 (search menu)
+
+Setup
+  ✓ config     ~/.config/geet/config.toml · opus · jobs 16, resolve_jobs 24
+  ✓ library    ~/Music writable, 291.1 GB free
+  ✓ index      219 songs known
+
+Services
+  ✓ Spotify    read "Monkeys Spinning Monkeys" by Kevin MacLeod · 1.4s
+  ✓ YouTube    search works · 1.5s
+  ✓ Deezer     reachable (searches as NP: some label catalogs are regional) · 0.4s
+  ✓ iTunes     reachable (US store, found "Blinding Lights") · 0.2s
+
+All good.
+```
+
+- **Tools:** an old yt-dlp is flagged (YouTube breaks old versions), and a missing ffmpeg encoder for your format is an error.
+- **Setup:** config errors come with the exact line, the library folder is tested for writing and free space, and the index is checked for corruption.
+- **Services:** each is exercised with one small real request (no audio is downloaded). That catches Spotify changing its pages or YouTube blocking your IP.
+- `--offline` skips the network, and `--json` is for the plugin. The exit code is `0` when nothing failed and `1` when something needs fixing.
 
 ### Where files go
 

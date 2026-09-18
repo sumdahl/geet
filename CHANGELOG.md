@@ -7,6 +7,14 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Added
+- `geet doctor`: a health check of everything geet depends on. It covers
+  yt-dlp (with age), ffmpeg and its encoders, ffprobe, fzf, the config, the
+  library folder (writable, free space) and the index, plus a small live
+  request to Spotify, YouTube, Deezer and iTunes. Each problem comes with a
+  fix. `--offline` skips the network, and `--json` is for the plugin. The
+  exit code is 1 when something needs fixing.
+
 ### Changed
 - Big runs (more than 8 tracks) use a compact display. Only tracks that are
   downloading or tagging get a progress bar, and one summary line at the

@@ -147,3 +147,27 @@ func TestSameRecording(t *testing.T) {
 		})
 	}
 }
+
+func TestPing(t *testing.T) {
+	for _, tt := range []struct {
+		body    string
+		want    string
+		wantErr bool
+	}{
+		{`{"country_iso":"NP","country":"Nepal","open":true}`, "NP", false},
+		{`{"country_iso":"XX","open":false}`, "XX", true},
+		{`{"error":{"type":"Exception","message":"down","code":2}}`, "", true},
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/infos" {
+				t.Errorf("path %s", r.URL.Path)
+			}
+			w.Write([]byte(tt.body))
+		}))
+		got, err := New(srv.URL).Ping(context.Background())
+		srv.Close()
+		if got != tt.want || (err != nil) != tt.wantErr {
+			t.Errorf("Ping(%s) = %q, %v", tt.body, got, err)
+		}
+	}
+}

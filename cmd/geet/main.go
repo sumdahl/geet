@@ -44,6 +44,7 @@ commands:
                            (also Apple Music song links and itunes:<id>)
   search <words…>          find a song by name, pick it from a menu, download it
   watch                    watch the clipboard for Spotify links (not built yet)
+  doctor                   check tools, setup and services, and how to fix problems
   config                   show the effective configuration
   config path              print the config file location
   config settings          list every setting with its flag and env variable
@@ -71,6 +72,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return downloadCmd(ctx, args[1:], stdout, stderr)
 	case "search":
 		return searchCmd(ctx, args[1:], stdout, stderr)
+	case "doctor":
+		return doctorCmd(ctx, args[1:], stdout, stderr)
 	case "config":
 		return configCmd(args[1:], stdout, stderr)
 	case "watch":

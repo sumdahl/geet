@@ -352,3 +352,20 @@ func hasArtist(artists []string, name string) bool {
 	}
 	return false
 }
+
+// Ping checks that Deezer's API answers, and returns the country it thinks
+// the request comes from: Deezer filters search results by that country,
+// which is why some tracks get no ISRC (see the package comment).
+func (c *Client) Ping(ctx context.Context) (country string, err error) {
+	var info struct {
+		CountryISO string `json:"country_iso"`
+		Open       bool   `json:"open"`
+	}
+	if err := c.get(ctx, "/infos", &info); err != nil {
+		return "", err
+	}
+	if !info.Open {
+		return info.CountryISO, fmt.Errorf("deezer is not available in %s", info.CountryISO)
+	}
+	return info.CountryISO, nil
+}

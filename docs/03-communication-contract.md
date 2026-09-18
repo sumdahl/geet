@@ -75,3 +75,14 @@ Prints one JSON array (not NDJSON) of ranked results and downloads nothing:
 - `clean: true` marks a clean edit (its title may be censored).
 - `geet download` accepts `itunes:<id>` refs and Apple Music song links.
 - `geet search <words…> --pick 1,3` downloads without a menu.
+
+## Health (`geet doctor --json`)
+One JSON object, for the plugin to show a status or to explain failing downloads:
+```json
+{"healthy":true,"version":"geet v0.1.0 (330f3ac, 2026-09-18)",
+ "checks":[{"group":"Tools","name":"yt-dlp","status":"ok","detail":"2026.08.19 (30 days old)"},
+           {"group":"Services","name":"YouTube","status":"fail","detail":"…","fix":"YouTube is limiting this IP: …","ms":1480}]}
+```
+- `status` is one of `ok`, `warn` (works, but needs attention), `fail` (downloads will fail until fixed) and `skip` (optional and absent, or not checked).
+- `healthy` is false only when some check has status `fail`. The exit code matches: 0 when healthy, 1 otherwise.
+- `--offline` skips the Services group, which then has a single `skip` entry.

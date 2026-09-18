@@ -173,6 +173,19 @@ func (x *Index) remove(k string) {
 	delete(x.tracks, k)
 }
 
+// Stats counts the known songs and how many of them point to files that no
+// longer exist, without changing anything.
+func (x *Index) Stats() (total, missing int) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	for _, e := range x.tracks {
+		if _, err := os.Stat(e.Path); err != nil {
+			missing++
+		}
+	}
+	return len(x.tracks), missing
+}
+
 func (x *Index) Len() int {
 	x.mu.Lock()
 	defer x.mu.Unlock()
