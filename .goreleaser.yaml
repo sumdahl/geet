@@ -32,9 +32,9 @@ checksum:
   algorithm: sha256
 
 # The notes are the version's CHANGELOG.md section, passed with
-# --release-notes by the workflow (scripts/release-notes.sh).
-changelog:
-  disable: true
+# --release-notes by the workflow (scripts/release-notes.sh). Don't set
+# changelog.disable: it skips the step that loads --release-notes too, and
+# v0.3.0 went out with only the header and footer.
 
 release:
   name_template: "geet {{ .Tag }}"
