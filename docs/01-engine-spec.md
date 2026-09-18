@@ -69,7 +69,7 @@ One ffmpeg pass per track: convert, tag, embed cover.
 
 ## Output path (`internal/library`)
 - `output` (default `~/Music`) + `output_template` (default
-  `{artist}/{title} - {artists}`, e.g. `Gunna/fukumean - Gunna.opus`) +
+  `{title} - {artists}`, flat in `output`, e.g. `fukumean - Gunna.opus`) +
   `.{format}`. Album/cover/track metadata lives in the file's tags, not
   the folder layout; users wanting `{album_artist}/{album}/{track} {title}`
   set it in config.

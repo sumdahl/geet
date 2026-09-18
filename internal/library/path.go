@@ -16,7 +16,7 @@ import (
 	"github.com/sumdahl/spotify-dl/internal/spotify"
 )
 
-const DefaultTemplate = "{artist}/{title} - {artists}"
+const DefaultTemplate = "{title} - {artists}"
 
 var Placeholders = []string{
 	"{title}", "{artist}", "{artists}", "{album}", "{album_artist}",

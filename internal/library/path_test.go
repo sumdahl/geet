@@ -18,12 +18,12 @@ func TestPath(t *testing.T) {
 		track func(*spotify.Track)
 		want  string
 	}{
-		{name: "default", tmpl: DefaultTemplate, want: "/m/Steven Wilson/Ancestral - Steven Wilson.opus"},
+		{name: "default", tmpl: DefaultTemplate, want: "/m/Ancestral - Steven Wilson.opus"},
 		{
 			name:  "default with featured artists",
 			tmpl:  DefaultTemplate,
 			track: func(t *spotify.Track) { t.Artists = []string{"Pitbull", "Chris Brown"}; t.Title = "Hope We Meet Again" },
-			want:  "/m/Pitbull/Hope We Meet Again - Pitbull, Chris Brown.opus",
+			want:  "/m/Hope We Meet Again - Pitbull, Chris Brown.opus",
 		},
 		{name: "album layout", tmpl: "{album_artist}/{album}/{track} {title}", want: "/m/Steven Wilson/Hand Cannot Erase/07 Ancestral.opus"},
 		{name: "flat", tmpl: "{artists} - {title}", want: "/m/Steven Wilson - Ancestral.opus"},
