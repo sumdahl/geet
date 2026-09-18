@@ -29,6 +29,14 @@ A Go CLI that takes a Spotify track, album or playlist URL, gets its metadata (s
 
 Linux is the target and macOS is best effort, where everything but `watch` (Wayland `wl-paste`, `notify-send`) should work. The user decided not to pursue other platforms for now: the BSDs and Windows don't compile (`syscall.Statfs` in `internal/doctor`, `syscall.Stat_t` in `internal/index`), and that's accepted. Keep new code building for `GOOS=darwin`. Releases come only from `.github/workflows/release.yml` (GoReleaser, `.goreleaser.yaml`) on a `v*` tag pushed after CI passes on `main`. The release steps are in the README, under "Continuous integration and releases". Never hand-build a release. Asset names must stay `geet-<os>-<arch>` plus `SHA256SUMS`: `install.sh` (the README's `curl … | sh` one-liner) downloads `geet-<os>-<arch>` and verifies it against `SHA256SUMS`, and v0.2.0 first shipped Linux-only, which gave a Mac user `exec format error`.
 
+## Installer (`install.sh`)
+
+- It's POSIX `sh`, ASCII only (bash 3.2 on macOS breaks on a non-ASCII byte after `$var`), and shellcheck-clean (`docker run --rm -v $PWD/install.sh:/i.sh:ro koalaman/shellcheck:stable -s sh /i.sh`).
+- Prompts read `/dev/tty`, since stdin is the script under `curl | sh`. Terminal modes are restored by the EXIT trap, which must keep the original exit status.
+- Required tools are yt-dlp, ffmpeg and fzf. All three are Homebrew formulae, not casks. On apt systems yt-dlp comes from its official build, because Debian's is too old.
+- `.github/workflows/installer.yml` runs `--yes` on a real Mac and in Ubuntu, Debian, Fedora, Arch and Alpine containers.
+- To test the interactive menus locally, run the installer in `tmux` inside a docker container, drive it with `tmux send-keys`, and read the screen with `tmux capture-pane -p`.
+
 ## Architecture rules (non-negotiable)
 
 - **Never reimplement YouTube extraction.** Shell out to the `yt-dlp` binary for search and download, and to `ffmpeg` for transcoding and embedding cover art. Go handles metadata resolution, match scoring, orchestration, concurrency and the CLI.

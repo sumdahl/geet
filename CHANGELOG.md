@@ -11,9 +11,12 @@ still change the CLI, the configuration or the `--json` output.
 - macOS builds (`geet-darwin-amd64`, `geet-darwin-arm64`), and a one-line
   installer for Linux and macOS:
   `curl -fsSL https://raw.githubusercontent.com/sumdahl/geet/main/install.sh | sh`.
-  It picks the binary for the system, verifies it against `SHA256SUMS`,
-  installs to `~/.local/bin` without sudo, and says what's missing (`PATH`,
-  yt-dlp, ffmpeg). Before this, the README's download command fetched the
+  It picks the binary for the system and verifies it against `SHA256SUMS`.
+  In a terminal it then offers, from an arrow-key menu, to install the
+  required tools (yt-dlp, ffmpeg, fzf) and the optional ones for `geet
+  watch`, through Homebrew, pacman, apt, dnf or apk, showing every command
+  (sudo included) first, and to add `~/.local/bin` to `PATH`. `--yes`,
+  `--required` and `--no-deps` do the same without questions. Before this, the README's download command fetched the
   Linux binary on a Mac too, which fails with `exec format error`.
 - Releases are built and published by GitHub Actions with GoReleaser, and
   every binary has signed build provenance (`gh attestation verify <file>

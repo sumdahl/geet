@@ -1,0 +1,67 @@
+name: Installer
+
+# install.sh installs system packages, so it's tested where it runs: a real
+# Mac (Homebrew) and fresh containers of each Linux family it supports.
+on:
+  push:
+    branches: [main]
+    paths: [install.sh, .github/workflows/installer.yml]
+  pull_request:
+    paths: [install.sh, .github/workflows/installer.yml]
+  schedule:
+    - cron: "17 5 * * 1" # weekly: package names and upstream downloads drift
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install geet and every tool, as curl | sh -s -- --yes does
+        run: sh -s -- --yes < install.sh
+      - name: geet finds its tools
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          geet version
+          yt-dlp --version
+          ffmpeg -hide_banner -version | head -n 1
+          fzf --version
+          # 1 is "something to fix" (no ~/Music on a fresh box); more is geet failing.
+          rc=0; geet doctor --offline || rc=$?
+          test "$rc" -le 1
+
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ubuntu:24.04
+            prep: apt-get update -q && apt-get install -y -q curl ca-certificates
+          - image: debian:stable-slim
+            prep: apt-get update -q && apt-get install -y -q curl ca-certificates
+          - image: fedora:latest
+            prep: "true"
+          - image: archlinux:latest
+            prep: pacman -Sy --noconfirm
+          - image: alpine:latest
+            prep: apk add -q curl
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    steps:
+      - run: ${{ matrix.prep }}
+      - uses: actions/checkout@v7
+      - name: Install geet and every tool
+        run: sh -s -- --yes < install.sh
+      - name: geet finds its tools
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          geet version
+          yt-dlp --version
+          ffmpeg -hide_banner -version | head -n 1
+          fzf --version
+          # 1 is "something to fix" (no ~/Music on a fresh box); more is geet failing.
+          rc=0; geet doctor --offline || rc=$?
+          test "$rc" -le 1

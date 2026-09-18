@@ -42,11 +42,42 @@ brew install yt-dlp ffmpeg                            # macOS
 curl -fsSL https://raw.githubusercontent.com/sumdahl/geet/main/install.sh | sh
 ```
 
-The [installer](install.sh) picks the binary for your system (Linux or macOS, x86-64 or arm64/Apple Silicon) from the latest [release](https://github.com/sumdahl/geet/releases), checks it against the release's `SHA256SUMS`, and installs it to `~/.local/bin` without sudo. It then says whether that folder is on your `PATH` and whether `yt-dlp` and `ffmpeg` are missing, with the command to install them. Run it again to update. `GEET_VERSION=v0.2.0` pins a release, and `GEET_INSTALL_DIR` picks another folder (put the variable after the pipe: `… | GEET_VERSION=v0.2.0 sh`).
+The [installer](install.sh) first shows your system and which of geet's tools are already installed, then a menu you drive with the arrow keys:
 
-Then run `geet doctor` to check that everything geet needs is in place.
+```
+  Tools geet uses
+  ✓ yt-dlp         2026.08.19     finds and downloads the audio
+  ✗ ffmpeg         required       converts and tags the files
+  ✗ fzf            required       the geet search menu
+  · wl-clipboard   optional       geet watch: reads the clipboard
 
-Or download a binary yourself: `geet-linux-amd64`, `geet-linux-arm64`, `geet-darwin-amd64` or `geet-darwin-arm64` from [Releases](https://github.com/sumdahl/geet/releases). Each is a single static file that needs nothing but `yt-dlp` and `ffmpeg`. On macOS, a binary saved from a web browser is quarantined, and macOS won't open it until you run `xattr -d com.apple.quarantine <file>`. `exec format error` means the binary is for another system, such as the Linux one on a Mac.
+  What should be installed?
+  ❯ Recommended      geet, the required tools and the optional ones
+    Required only    geet with yt-dlp, ffmpeg and fzf
+    Custom           choose each tool
+    geet only        no tools
+    Quit             install nothing
+```
+
+- **Required tools:** yt-dlp, ffmpeg and fzf. **Optional, Linux only:** wl-clipboard and libnotify, which `geet watch` uses.
+- **Before anything runs,** it shows the plan with the exact commands, `sudo` included, and asks to go ahead. It then offers to add `~/.local/bin` to your `PATH`.
+- **Where the tools come from:**
+  - macOS: Homebrew, `brew install` (all three are formulae, not casks). If Homebrew is missing, it offers to install it first.
+  - Arch: pacman. Fedora: dnf, where ffmpeg is `ffmpeg-free`. Alpine: apk.
+  - Debian and Ubuntu: apt, except yt-dlp. Their yt-dlp package is too old for YouTube, so it gets yt-dlp's official build instead.
+- **geet itself** is the release binary for your system (Linux or macOS, x86-64 or arm64), checked against the release's `SHA256SUMS`, installed to `~/.local/bin` without sudo. Run the installer again to update.
+
+Without a terminal (scripts, CI) it asks nothing: it installs geet, and only reports missing tools. Options go after `sh -s --`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/sumdahl/geet/main/install.sh | sh -s -- --yes        # geet and every tool, no questions
+curl -fsSL https://raw.githubusercontent.com/sumdahl/geet/main/install.sh | sh -s -- --required   # geet, yt-dlp, ffmpeg, fzf
+curl -fsSL https://raw.githubusercontent.com/sumdahl/geet/main/install.sh | sh -s -- --no-deps    # geet only
+```
+
+`--version v0.2.0` pins a release, `--dir DIR` installs elsewhere, and `--help` lists everything. The same settings are available as `GEET_VERSION`, `GEET_INSTALL_DIR` and `GEET_DEPS` (`all`, `required` or `none`). Then run `geet doctor` to check that everything works.
+
+Or download a binary yourself: `geet-linux-amd64`, `geet-linux-arm64`, `geet-darwin-amd64` or `geet-darwin-arm64` from [Releases](https://github.com/sumdahl/geet/releases). Each is a single static file. On macOS, a binary saved from a web browser is quarantined, and macOS won't open it until you run `xattr -d com.apple.quarantine <file>`. `exec format error` means the binary is for another system, such as the Linux one on a Mac.
 
 **Or build from source** (Go 1.27+):
 
@@ -428,7 +459,7 @@ go vet ./... && gofmt -l .
 
 ### Continuous integration and releases
 
-Every push to `main` and every pull request runs [CI](.github/workflows/ci.yml): golangci-lint, then `go vet` and `go test -race` on both Linux and macOS, and a smoke test of the built binary. A separate job runs `install.sh` against the latest release on a real Linux machine and a real Mac.
+Every push to `main` and every pull request runs [CI](.github/workflows/ci.yml): golangci-lint, then `go vet` and `go test -race` on both Linux and macOS, and a smoke test of the built binary. A separate job runs `install.sh` against the latest release on a real Linux machine and a real Mac. Whenever `install.sh` changes, and weekly, the [installer workflow](.github/workflows/installer.yml) installs geet and every tool with `--yes` on a real Mac (Homebrew) and in fresh Ubuntu, Debian, Fedora, Arch and Alpine containers.
 
 Releases are built by [GoReleaser](https://goreleaser.com/) in [release.yml](.github/workflows/release.yml), never by hand. To release version 0.3.0:
 
