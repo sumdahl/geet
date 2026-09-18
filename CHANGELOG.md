@@ -7,7 +7,18 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-18
+
 ### Added
+- `geet watch`, the clipboard daemon: copy a Spotify track, album or
+  playlist link (or several songs at once) and it downloads, one link after
+  another. A desktop notification with the cover shows the download start
+  and changes to the result. A failed link doesn't stop it. New settings:
+  `watch.interval`, `watch.notify`, `tools.wl_paste`, `tools.notify_send`.
+  Linux (Wayland) only.
+- `watch --json` adds `queued` and `finished` events (one each per copied
+  link, with `counts` of saved, existing and failed tracks), and a `job`
+  and `source` on every event, so a consumer can tell links apart.
 - macOS builds (`geet-darwin-amd64`, `geet-darwin-arm64`), and a one-line
   installer for Linux and macOS:
   `curl -fsSL https://raw.githubusercontent.com/sumdahl/geet/main/install.sh | sh`.
@@ -16,34 +27,26 @@ still change the CLI, the configuration or the `--json` output.
   required tools (yt-dlp, ffmpeg, fzf) and the optional ones for `geet
   watch`, through Homebrew, pacman, apt, dnf or apk, showing every command
   (sudo included) first, and to add `~/.local/bin` to `PATH`. `--yes`,
-  `--required` and `--no-deps` do the same without questions. Before this, the README's download command fetched the
-  Linux binary on a Mac too, which fails with `exec format error`.
-- Releases are built and published by GitHub Actions with GoReleaser, and
-  every binary has signed build provenance (`gh attestation verify <file>
-  -R sumdahl/geet`). CI runs lint and the tests on Linux and macOS.
-- `geet watch`, the clipboard daemon: copy a Spotify track, album or
-  playlist link (or several songs at once) and it downloads, one link after
-  another. A desktop notification with the cover shows the download start
-  and changes to the result. A failed link doesn't stop it. New settings:
-  `watch.interval`, `watch.notify`, `tools.wl_paste`, `tools.notify_send`.
-- `watch --json` adds `queued` and `finished` events (one each per copied
-  link, with `counts` of saved, existing and failed tracks), and a `job`
-  and `source` on every event, so a consumer can tell links apart.
-- `--tracks` (stdin) or `--tracks=FILE` downloads a list of song links, one per line, for
-  example `wl-paste | geet download <playlist> --tracks` after selecting
-  every song in Spotify (Ctrl+A, Ctrl+C). This is how playlists over
-  Spotify's 100-song public limit are downloaded in full. The playlist link
-  names the folder, duplicates in the list are dropped, and `#` lines are
-  comments.
+  `--required` and `--no-deps` do the same without questions. Before this,
+  the README's download command fetched the Linux binary on a Mac too,
+  which fails with `exec format error`.
+- `--tracks` (stdin) or `--tracks=FILE` downloads a list of song links, one
+  per line, for example `wl-paste | geet download <playlist> --tracks` after
+  selecting every song in Spotify (Ctrl+A, Ctrl+C). This is how playlists
+  over Spotify's 100-song public limit are downloaded in full. The playlist
+  link names the folder, duplicates in the list are dropped, and `#` lines
+  are comments.
 - A playlist larger than its public page is detected ("100 of the 201
   songs"), with the exact command to get the rest.
-
 - `youtube.cookies_from_browser = "auto"` uses the default browser's YouTube
   sign-in. For Chromium-based browsers the keyring is added automatically
   (`brave+gnomekeyring` on Omarchy), whether the browser is named or
   detected. Without it, yt-dlp decrypts no cookies outside GNOME or KDE and
   silently sends none. `geet doctor` shows the resolved value and checks that
   the cookies decrypt.
+- Releases are built and published by GitHub Actions with GoReleaser, and
+  every binary has signed build provenance (`gh attestation verify <file>
+  -R sumdahl/geet`). CI runs lint and the tests on Linux and macOS.
 
 ### Changed
 - YouTube's "confirm you're not a bot" block gives each affected track a
@@ -53,6 +56,8 @@ still change the CLI, the configuration or the `--json` output.
   only prolongs the block.
 - `geet doctor` checks that YouTube serves audio, not only search results,
   because the bot check blocks downloads while search keeps working.
+- `geet doctor` reports Spotify rate-limiting (HTTP 429) as such, at once,
+  with how long to wait, instead of timing out or blaming the network.
 - Warnings print as plain `warning: …` lines instead of timestamped log
   records. `-v` still shows everything.
 
@@ -131,6 +136,7 @@ First release.
   YouTube. Ctrl+C leaves no partial files, and re-running resumes.
 - `geet version` shows the release, commit and date.
 
-[Unreleased]: https://github.com/sumdahl/geet/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/sumdahl/geet/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/sumdahl/geet/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/sumdahl/geet/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/sumdahl/geet/releases/tag/v0.1.0
