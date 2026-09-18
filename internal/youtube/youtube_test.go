@@ -159,6 +159,33 @@ func TestScoreRules(t *testing.T) {
 			wantReject: true,
 		},
 		{name: "topic channel", cand: func(c *Candidate) { c.Title = "Song"; c.Channel = "Band - Topic" }},
+		{
+			name:      "clean upload of an explicit song",
+			track:     func(t *spotify.Track) { t.Explicit = true },
+			cand:      func(c *Candidate) { c.Title = "Band - Song (Clean)" },
+			wantLower: true,
+		},
+		{
+			name:      "radio edit of an explicit song",
+			track:     func(t *spotify.Track) { t.Explicit = true },
+			cand:      func(c *Candidate) { c.Title = "Band - Song (Radio Edit)" },
+			wantLower: true,
+		},
+		{
+			name:  "explicit upload of an explicit song",
+			track: func(t *spotify.Track) { t.Explicit = true },
+			cand:  func(c *Candidate) { c.Title = "Band - Song (Explicit)" },
+		},
+		{
+			name:      "explicit upload when the clean edit was picked",
+			track:     func(t *spotify.Track) { t.Clean = true },
+			cand:      func(c *Candidate) { c.Title = "Band - Song (Explicit)" },
+			wantLower: true,
+		},
+		{
+			name: "clean upload of a song that isn't explicit",
+			cand: func(c *Candidate) { c.Title = "Band - Song (Clean)" },
+		},
 		{name: "vevo channel", cand: func(c *Candidate) { c.Channel = "BandVEVO" }},
 	}
 	for _, tt := range tests {
@@ -423,5 +450,122 @@ func TestParseCandidatesIgnoresStreamURL(t *testing.T) {
 		if c.URL != want[i] {
 			t.Errorf("%s: URL %q, want %q", c.ID, c.URL, want[i])
 		}
+	}
+}
+
+// The explicit "Tonight (I'm Fuckin' You)" is age-restricted on YouTube.
+// Of the real search, the only thing worth trying next is a fan channel's
+// re-upload of the same audio: full title, 233s against Spotify's 232.2s.
+// The lyric video (12s long), the clean "Lovin'" video and a 213s edit
+// stay out.
+func TestAlternativesForAgeRestricted(t *testing.T) {
+	track := spotify.Track{
+		Title:    "Tonight (I'm Fuckin' You)",
+		Artists:  []string{"Enrique Iglesias", "Ludacris", "DJ Frank E"},
+		Duration: 232213 * time.Millisecond,
+		Explicit: true,
+	}
+	best, all, err := Best(track, loadFixture(t, "tonight.ndjson"), maxDiff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if best.ID != "-yFj3FvoOWY" {
+		t.Fatalf("best %s, want the official -yFj3FvoOWY", best.ID)
+	}
+	var ids []string
+	for _, a := range Alternatives(track, all, best) {
+		ids = append(ids, a.ID)
+	}
+	if want := []string{"xA0V8jCVMmE"}; !reflect.DeepEqual(ids, want) {
+		t.Errorf("alternatives %v, want %v", ids, want)
+	}
+}
+
+func TestAlternativesOrderAndLimits(t *testing.T) {
+	track := spotify.Track{Title: "Song", Artists: []string{"Band"}, Duration: 200 * time.Second, Explicit: true}
+	c := func(id, title, channel string, secs int) Candidate {
+		return Candidate{ID: id, Title: title, Channel: channel, Duration: time.Duration(secs) * time.Second}
+	}
+	cands := []Candidate{
+		c("best", "Band - Song", "Band", 200),
+		c("low", "Band - Song (Lyrics)", "Fan", 205),
+		c("high", "Band - Song (Audio)", "Band - Topic", 200),
+		c("remix", "Band - Song (Official Remix) [Official Audio]", "Band", 206), // accepted by matching, but another recording
+		c("reup", "Song", "Somebody", 201),
+		c("reup-far", "Song", "Somebody", 204),           // not within 2s
+		c("reup-clean", "Song (Clean)", "Somebody", 200), // the other edit
+		c("best", "Band - Song", "Band", 200),            // the same video from the second search
+	}
+	var all []Scored
+	for i, x := range cands {
+		all = append(all, score(track, x, i, len(cands), maxDiff))
+	}
+	var ids []string
+	for _, a := range Alternatives(track, all, all[0]) {
+		ids = append(ids, a.ID)
+	}
+	if want := []string{"high", "low", "reup"}; !reflect.DeepEqual(ids, want) {
+		t.Errorf("alternatives %v, want %v", ids, want)
+	}
+}
+
+// A clean edit found as a fallback, "Tonight (I'm Lovin' You)", fits the
+// base title "Tonight" as well as the age-restricted explicit song does.
+// YouTube Music lists both (tonight_clean_music.ndjson is the real listing),
+// and only the clean ones may be opened; an upload with the explicit words
+// scores lower; and the clean upload can't stand in for the explicit song.
+var tonightClean = spotify.Track{
+	Title:    "Tonight (I'm Lovin' You) [feat. Ludacris & DJ Frank E]",
+	Artists:  []string{"Enrique Iglesias"},
+	Duration: 231 * time.Second,
+	Clean:    true,
+}
+
+func TestCleanEditOpensOnlyCleanMusicResults(t *testing.T) {
+	// The two regular searches return another song's results (any that don't
+	// match will do), so the YouTube Music fallback runs.
+	bin, argsFile := fakeYtDlp(t, "kaalpanik.ndjson", "kaalpanik_audio.ndjson", "tonight_clean_music.ndjson", "tonight_clean_details.ndjson")
+	best, _, err := newResolver(bin, true).Resolve(context.Background(), tonightClean)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if best.ID != "K_l00nL1o8s" {
+		t.Errorf("picked %s, want the clean K_l00nL1o8s", best.ID)
+	}
+	raw, _ := os.ReadFile(argsFile)
+	calls := strings.Split(strings.TrimSuffix(string(raw), "--\n"), "--\n")
+	details := calls[len(calls)-1]
+	for _, id := range []string{"-yFj3FvoOWY", "CSK_GVD_I3M"} {
+		if strings.Contains(details, id) {
+			t.Errorf("opened the explicit %s for a clean edit:\n%s", id, details)
+		}
+	}
+	for _, id := range []string{"K_l00nL1o8s", "IgkslT5Tv3o"} {
+		if !strings.Contains(details, id) {
+			t.Errorf("didn't open the clean %s:\n%s", id, details)
+		}
+	}
+}
+
+func TestEditWordsInsideBrackets(t *testing.T) {
+	explicit := spotify.Track{Title: "Tonight (I'm Fuckin' You)", Artists: []string{"Enrique Iglesias"}, Duration: 232 * time.Second, Explicit: true}
+	mk := func(id, title string) Candidate {
+		return Candidate{ID: id, Title: title, Channel: "Enrique Iglesias", Duration: 232 * time.Second, Verified: true}
+	}
+	explicitUp := mk("e", "Enrique Iglesias - Tonight (I'm Fuckin' You)")
+	cleanUp := mk("c", "Enrique Iglesias - Tonight (I'm Lovin' You)")
+
+	// Picking the clean edit, the explicit upload scores lower.
+	if s, e := score(tonightClean, explicitUp, 0, 2, maxDiff), score(tonightClean, cleanUp, 0, 2, maxDiff); s.Score >= e.Score {
+		t.Errorf("clean edit: explicit upload %.1f, clean upload %.1f; want the explicit one lower", s.Score, e.Score)
+	}
+	// The clean upload passes matching for the explicit song (same base
+	// title), but must never stand in for it.
+	all := []Scored{score(explicit, explicitUp, 0, 2, maxDiff), score(explicit, cleanUp, 1, 2, maxDiff)}
+	if all[1].Reject != "" {
+		t.Fatalf("setup: clean upload rejected (%s); the case needs it accepted", all[1].Reject)
+	}
+	if alts := Alternatives(explicit, all, all[0]); len(alts) != 0 {
+		t.Errorf("alternatives %v, want none: the clean upload isn't the explicit recording", alts[0].Title)
 	}
 }

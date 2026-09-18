@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sumdahl/geet/internal/audio"
@@ -437,7 +438,7 @@ func runDownload(ctx context.Context, cfg config.Config, rep *reporter, col spot
 	for i, t := range tracks {
 		jobs[i] = &trackJob{t: t, ev: event{Track: trackName(t), SpotifyID: t.ID, Index: i + 1, Total: len(tracks)}}
 	}
-	botChecked, ageChecked := false, false
+	botChecked := false
 	err = pipeline.Run(ctx, jobs, []pipeline.Stage[*trackJob]{
 		{Name: "resolve", Workers: cfg.ResolveJobs, Do: d.resolve},
 		{Name: "download", Workers: cfg.Jobs, Do: d.download},
@@ -459,9 +460,8 @@ func runDownload(ctx context.Context, cfg config.Config, rep *reporter, col spot
 			botChecked = true
 			rep.notice(ytdlp.BotCheckAdvice(cfg.YouTube.CookiesFromBrowser, err))
 		}
-		if errors.Is(err, ytdlp.ErrAgeRestricted) && !ageChecked {
-			ageChecked = true
-			rep.notice(ytdlp.AgeRestrictedAdvice(err))
+		if errors.Is(err, ytdlp.ErrAgeRestricted) {
+			d.noticeAge(err)
 		}
 	})
 	if ctx.Err() != nil {
@@ -487,6 +487,8 @@ type downloader struct {
 	yt   *youtube.Resolver
 	ytd  ytdlp.Runner
 	rep  *reporter
+
+	ageNoticed atomic.Bool // the age-restriction advice is shown once a run
 }
 
 func newDownloader(cfg config.Config, root string, rep *reporter, idx *index.Index) *downloader {
@@ -523,6 +525,10 @@ type trackJob struct {
 	url  string
 	work string
 	src  download.Source
+	alts []youtube.Scored // what to try if YouTube age-restricts url
+	// cleanEdit is the clean edit's title when the explicit version couldn't
+	// be had and the clean one was saved instead.
+	cleanEdit string
 }
 
 func (d *downloader) emit(j *trackJob, stage string) {
@@ -564,10 +570,11 @@ func (d *downloader) resolve(ctx context.Context, j *trackJob) (*trackJob, bool,
 		}
 	}
 
-	best, _, err := d.yt.Resolve(ctx, j.t)
+	best, all, err := d.yt.Resolve(ctx, j.t)
 	if err != nil {
 		return j, false, err
 	}
+	j.alts = youtube.Alternatives(j.t, all, best)
 	j.url = best.URL
 	j.ev.YouTubeURL = best.URL
 	d.emit(j, "resolved")
@@ -582,12 +589,78 @@ func (d *downloader) download(ctx context.Context, j *trackJob) (*trackJob, bool
 	j.work = work
 	d.emit(j, "downloading")
 	j.src, err = d.fetch(ctx, j.url, j.work, j.tu, j.ev)
+	if errors.Is(err, ytdlp.ErrAgeRestricted) {
+		j.src, err = d.avoidAgeRestriction(ctx, j, err)
+	}
 	if err == nil {
 		// Display only (not an NDJSON stage): the download slot is free
 		// while the track waits for a tagging worker.
 		j.tu.stage(event{Stage: "downloaded"})
 	}
 	return j, false, err
+}
+
+// maxAlternatives caps the other uploads tried for an age-restricted one.
+const maxAlternatives = 3
+
+// avoidAgeRestriction gets the song some other way when YouTube age-restricts
+// the upload chosen for it, in this order: the next uploads that passed
+// matching and exact re-uploads (youtube.Alternatives); then, for an
+// explicit song, its clean edit, found in the Apple catalog. The explicit
+// version is the default and the clean edit only a fallback, so the file
+// says so: " (Clean)" in the title tag and a warning. ageErr is returned if
+// nothing works.
+func (d *downloader) avoidAgeRestriction(ctx context.Context, j *trackJob, ageErr error) (download.Source, error) {
+	d.noticeAge(ageErr)
+	try := func(cands []youtube.Scored, what string) (download.Source, bool) {
+		for _, c := range cands[:min(len(cands), maxAlternatives)] {
+			d.rep.ui.log("%s: age-restricted on YouTube, trying %s %q (%s)", j.ev.Track, what, c.Title, c.URL)
+			src, err := d.fetch(ctx, c.URL, j.work, j.tu, j.ev)
+			if err == nil {
+				j.url, j.ev.YouTubeURL = c.URL, c.URL
+				return src, true
+			}
+			if ctx.Err() != nil {
+				return download.Source{}, false
+			}
+			slog.DebugContext(ctx, "alternative failed", "track", j.ev.Track, "url", c.URL, "err", err)
+		}
+		return download.Source{}, false
+	}
+	if src, ok := try(j.alts, "another upload"); ok {
+		return src, nil
+	}
+	if !j.t.Explicit || ctx.Err() != nil {
+		return download.Source{}, ageErr
+	}
+
+	it := itunes.New("", d.cfg.Search.Country)
+	results, err := it.Search(ctx, itunes.CleanEditTerm(j.t))
+	if err != nil {
+		slog.DebugContext(ctx, "looking for a clean edit", "track", j.ev.Track, "err", err)
+		return download.Source{}, ageErr
+	}
+	clean, ok := itunes.CleanEdit(j.t, results)
+	if !ok {
+		return download.Source{}, ageErr
+	}
+	best, all, err := d.yt.Resolve(ctx, clean)
+	if err != nil {
+		return download.Source{}, ageErr
+	}
+	if src, ok := try(append([]youtube.Scored{best}, youtube.Alternatives(clean, all, best)...), "the clean edit"); ok {
+		j.cleanEdit = clean.Title
+		return src, nil
+	}
+	return download.Source{}, ageErr
+}
+
+// noticeAge shows how to get age-restricted songs, once a run: whether the
+// song then failed or came as a clean edit, the fix is the same.
+func (d *downloader) noticeAge(err error) {
+	if d.ageNoticed.CompareAndSwap(false, true) {
+		d.rep.notice(ytdlp.AgeRestrictedAdvice(err))
+	}
 }
 
 func (d *downloader) tag(ctx context.Context, j *trackJob) (*trackJob, bool, error) {
@@ -598,6 +671,9 @@ func (d *downloader) tag(ctx context.Context, j *trackJob) (*trackJob, bool, err
 		slog.WarnContext(ctx, "no cover art", "track", j.ev.Track, "err", err)
 	}
 	out := filepath.Join(j.work, "out."+d.cfg.Format)
+	if j.cleanEdit != "" {
+		j.t.Title += " (Clean)"
+	}
 	err = audio.Encode(ctx, d.cfg.Tools.FFmpeg, audio.Job{
 		Source: j.src.Path, SourceCodec: j.src.Codec, Dest: out,
 		Format: d.cfg.Format, Bitrate: d.cfg.Bitrate, Track: j.t, Cover: cover,
@@ -613,6 +689,10 @@ func (d *downloader) tag(ctx context.Context, j *trackJob) (*trackJob, bool, err
 	}
 	d.remember(ctx, j.t, j.dest)
 	j.ev.Warning = audio.QualityWarning(d.cfg.Format, d.cfg.Bitrate, j.src.Kbps, j.src.Codec)
+	if j.cleanEdit != "" {
+		warn := fmt.Sprintf("the explicit version is age-restricted on YouTube, so this is the clean edit (%q)", j.cleanEdit)
+		j.ev.Warning = strings.TrimPrefix(j.ev.Warning+"; "+warn, "; ")
+	}
 	d.emit(j, "done")
 	return j, false, nil
 }

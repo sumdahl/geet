@@ -11,7 +11,7 @@ import (
 
 // cacheVersion changes whenever the cached Track layout does; a file with
 // another version is ignored and rebuilt.
-const cacheVersion = 1
+const cacheVersion = 2 // 2: Track.Explicit
 
 // Cache keeps tracks read from Spotify's public pages on disk, so reading a
 // playlist again (songs were added, or a run was cut short) doesn't read the

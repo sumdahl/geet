@@ -66,7 +66,7 @@ func newTestWeb(t *testing.T) *Web {
 func TestWebResolve(t *testing.T) {
 	w := newTestWeb(t)
 	one := Track{ID: "t1", Title: "One", Artists: []string{"Alpha"}, AlbumArtist: "Alpha, Beta", Album: "Split Album",
-		CoverURL: "https://img/640", TrackNumber: 1, Year: 2011, Duration: 61 * time.Second}
+		CoverURL: "https://img/640", TrackNumber: 1, Year: 2011, Duration: 61 * time.Second, Explicit: true}
 	two := Track{ID: "t2", Title: "Two", Artists: []string{"Beta", "Tyler, The Creator"}, AlbumArtist: "Alpha, Beta", Album: "Split Album",
 		CoverURL: "https://img/640", TrackNumber: 2, Year: 2011, Duration: 122500 * time.Millisecond}
 	loner := Track{ID: "tx", Title: "Loner & Friends", Artists: []string{"Gamma", "Delta"}, AlbumArtist: "Gamma", Album: "Other Album",

@@ -108,7 +108,9 @@ func (r *Resolver) resolveMusic(ctx context.Context, t spotify.Track) (Scored, [
 	var open []string
 	want := titleWords(t)
 	for _, c := range listed {
-		if tokenCoverage(want, textnorm.Words(c.Title)) >= minTitleCoverage {
+		// For a clean edit, the explicit version fits the base title too;
+		// opening it only meets its age restriction.
+		if tokenCoverage(want, textnorm.Words(c.Title)) >= minTitleCoverage && (!t.Clean || fullTitle(t, c.Title)) {
 			open = append(open, c.URL)
 		}
 		if len(open) == musicDetails {

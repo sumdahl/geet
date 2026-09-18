@@ -55,6 +55,11 @@ Linux is the target and macOS is best effort, where everything but `watch` (Wayl
   - To add a setting, add the struct field and one `Settings()` entry. `TestSettingsCoverConfig` fails if you forget the entry.
   - The config file is optional. Unknown keys in it are an error.
 - `internal/spotify` and `internal/deezer`: built. See "Metadata sources".
+- **Explicit first, clean as a fallback** (the user's rule).
+  - `Track.Explicit` comes from Spotify's embed `isExplicit`, the Spotify API's `explicit`, and iTunes `trackExplicitness`. It's part of the cache, so bump `cacheVersion` if `Track` changes.
+  - On `ytdlp.ErrAgeRestricted`, `downloader.avoidAgeRestriction` tries `youtube.Alternatives`, then `itunes.CleanEdit`. A stand-in must be the same recording: no variant words, and the full title minus "feat.", because explicit and clean often differ only inside the brackets ("Lovin'" / "Fuckin'").
+  - A saved clean edit gets " (Clean)" in its title tag and a warning.
+  - Heavy live testing trips YouTube's bot check for this IP ("not a bot" on every video). When that happens, stop live runs and rely on the recorded fixtures.
 - `internal/youtube`: built. When both queries fail, `resolveMusic` searches YouTube Music's `#songs` (flat listing, then full details for up to 3 results whose title fits). A single video's full JSON puts a media stream in `url`, so `parseCandidates` takes `webpage_url` or builds the watch URL. Songs still rejected after that (another performer's recording, a different edit) are correct rejections, not bugs.
   - `yt-dlp ytsearchN:<query> --flat-playlist --dump-json` (about 1.5s), then scoring in `score.go`, which keeps every candidate's score or rejection reason (`-v` logs them).
   - `testdata/*.ndjson` are real searches. When a live search picks wrong, capture it as a fixture and add a case to `TestBestOnRealSearches` before changing weights.

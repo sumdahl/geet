@@ -287,6 +287,7 @@ type apiTrack struct {
 	TrackNumber int         `json:"track_number"`
 	DiscNumber  int         `json:"disc_number"`
 	DurationMS  int         `json:"duration_ms"`
+	Explicit    bool        `json:"explicit"`
 	ExternalIDs struct {
 		ISRC string `json:"isrc"`
 	} `json:"external_ids"`
@@ -305,6 +306,7 @@ func (t apiTrack) toTrack() Track {
 		Year:        year(t.Album.ReleaseDate),
 		Duration:    time.Duration(t.DurationMS) * time.Millisecond,
 		ISRC:        t.ExternalIDs.ISRC,
+		Explicit:    t.Explicit,
 	}
 }
 
