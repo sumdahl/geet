@@ -40,7 +40,16 @@ cd geet
 go install ./cmd/geet         # installs to $(go env GOPATH)/bin
 ```
 
-Or run from the source tree without installing: `go run ./cmd/geet download <url>`.
+Or build a binary yourself, with the release version stamped in:
+
+```sh
+go build -trimpath -ldflags "-s -w -X main.version=$(git describe --tags --always --dirty)" -o ~/.local/bin/geet ./cmd/geet
+geet version        # geet v0.1.0 (80f7f43, 2026-09-18)
+```
+
+Or run it from the source tree without installing: `go run ./cmd/geet download <url>`.
+
+Releases follow [Semantic Versioning](https://semver.org/), and the changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 ## Usage
 

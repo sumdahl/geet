@@ -148,3 +148,16 @@ func TestConfirmDownload(t *testing.T) {
 		}
 	}
 }
+
+func TestPseudoVersion(t *testing.T) {
+	for v, want := range map[string]bool{
+		"v0.0.0-20260918105524-80f7f43ed8ab+dirty": true,
+		"v0.1.1-0.20260918105524-80f7f43ed8ab":     true,
+		"v0.1.0":                                   false,
+		"v1.2.3-rc.1":                              false,
+	} {
+		if got := pseudoVersion.MatchString(v); got != want {
+			t.Errorf("pseudoVersion(%q) = %v, want %v", v, got, want)
+		}
+	}
+}

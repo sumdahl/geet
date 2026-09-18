@@ -1,0 +1,48 @@
+# Changelog
+
+All notable changes to geet are recorded here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
+[Semantic Versioning](https://semver.org/). Until 1.0, minor versions may
+still change the CLI, the configuration or the `--json` output.
+
+## [Unreleased]
+
+## [0.1.0] - 2026-09-18
+
+First release.
+
+### Added
+- `geet download <link>` for Spotify tracks, albums and playlists: matches
+  each song on YouTube, downloads it with yt-dlp, and writes the tags (title,
+  artists, album, album artist, track and disc number, year, ISRC, source
+  link) and a 640 px cover with ffmpeg.
+- Metadata without a Spotify account or API keys, from Spotify's public
+  pages, with ISRC and disc numbers from Deezer. The official Web API is used
+  if credentials are configured.
+- `geet search <words…>`: finds songs in the iTunes catalog, merges album
+  editions, ranks originals above covers, lets you pick in fzf (or a numbered
+  list), and confirms before downloading. `--pick` and `--json` are there for
+  scripts, and `geet download` accepts `itunes:<id>` and Apple Music links.
+- YouTube matching that rejects wrong lengths, other songs and uploads not
+  naming the artist, prefers official, Topic and VEVO channels, penalizes
+  live, cover, remix and sped-up uploads, and handles censored titles, accents
+  and Devanagari. If nothing matches, it searches again for the "audio"
+  upload.
+- Audio as Opus at YouTube's original quality (no re-encode), or MP3/FLAC at
+  a chosen bitrate, with a warning when the result can't beat the source.
+- Playlists download into their own folder with a hyphenated name, and tracks
+  are resolved, downloaded and tagged in parallel (`--jobs`,
+  `--resolve-jobs`).
+- A download index: existing files are skipped, and a song already
+  downloaded elsewhere is hard-linked instead of downloaded again.
+- Animated progress bars in a terminal, plain lines elsewhere, and NDJSON
+  progress events with `--json`.
+- Every setting is available as a config key
+  (`~/.config/geet/config.toml`), a flag and a `GEET_*` environment variable,
+  and `geet config settings --json` lists them.
+- Retries for failed downloads and for rate limiting by Spotify, iTunes and
+  YouTube. Ctrl+C leaves no partial files, and re-running resumes.
+- `geet version` shows the release, commit and date.
+
+[Unreleased]: https://github.com/sumdahl/geet/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/sumdahl/geet/releases/tag/v0.1.0

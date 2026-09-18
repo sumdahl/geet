@@ -10,6 +10,9 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"regexp"
+	"runtime/debug"
+	"strings"
 	"syscall"
 	"text/tabwriter"
 
@@ -26,8 +29,13 @@ const (
 	exitFatal   = 2
 )
 
-// Set at build time: go build -ldflags "-X main.version=v0.1.0".
-var version = "dev"
+// version is stamped at build time from the git tag:
+//
+//	go build -ldflags "-X main.version=$(git describe --tags --always --dirty)" ./cmd/geet
+//
+// Unstamped builds fall back to the module version (set by
+// `go install github.com/sumdahl/geet/cmd/geet@v0.1.0`) or "dev".
+var version = ""
 
 const usage = `usage: geet <command> [flags]
 
@@ -67,8 +75,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "watch":
 		fmt.Fprintln(stderr, "geet: watch is not implemented yet")
 		return exitFatal
-	case "version", "--version":
-		fmt.Fprintln(stdout, version)
+	case "version", "--version", "-v":
+		fmt.Fprintln(stdout, versionString())
 		return exitOK
 	case "-h", "-help", "--help", "help":
 		fmt.Fprint(stdout, usage)
@@ -146,6 +154,52 @@ func (c *cli) load() (config.Config, string, error) {
 	}
 	cfg, err := config.Load(path, c.overrides)
 	return cfg, path, err
+}
+
+// versionString is "geet v0.1.0 (80f7f43, 2026-09-18)": the release, plus
+// the exact commit and its date from the build's embedded VCS info, so a bug
+// report pins down the code even between releases.
+var pseudoVersion = regexp.MustCompile(`\d{14}-[0-9a-f]{12}`)
+
+func versionString() string {
+	v := version
+	var rev, date string
+	dirty := false
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		// Go stamps local builds with a pseudo-version such as
+		// v0.0.0-20260918105524-80f7f43ed8ab+dirty; only a real release
+		// (go install …@v0.1.0) is worth showing.
+		if mv := bi.Main.Version; v == "" && mv != "(devel)" && !pseudoVersion.MatchString(mv) {
+			v = mv
+		}
+		for _, s := range bi.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				rev = s.Value[:min(7, len(s.Value))]
+			case "vcs.time":
+				date = s.Value[:min(10, len(s.Value))]
+			case "vcs.modified":
+				dirty = s.Value == "true"
+			}
+		}
+	}
+	if v == "" {
+		v = "dev"
+	}
+	var detail []string
+	if rev != "" {
+		if dirty {
+			rev += "-dirty"
+		}
+		detail = append(detail, rev)
+	}
+	if date != "" {
+		detail = append(detail, date)
+	}
+	if len(detail) == 0 {
+		return "geet " + v
+	}
+	return fmt.Sprintf("geet %s (%s)", v, strings.Join(detail, ", "))
 }
 
 func setupLogging(w io.Writer, verbose bool) {
