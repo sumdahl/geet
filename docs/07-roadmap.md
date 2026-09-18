@@ -11,3 +11,11 @@
 6. Omarchy plugin v1 (`04-plugin-spec.md`).
 7. PKGBUILD + README.
 8. (Later, separately) playerctl auto-detect v2 (`05-future-v2-playerctl.md`).
+9. (Later, only if Mac users ask) `geet watch` on macOS: read the clipboard
+   with `pbpaste` in `internal/clipboard`, and notify through
+   `terminal-notifier` when installed (cover art via `-contentImage`,
+   in-place update via `-group`), falling back to `osascript` `display
+   notification` (text only, shown as "Script Editor"). A native
+   notification API isn't an option: Apple's needs a signed app bundle.
+   There's no Mac to test on, so a real run on one is required before
+   calling it done.
