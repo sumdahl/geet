@@ -156,35 +156,35 @@ func setupLogging(w io.Writer, verbose bool) {
 // resolveMetadata uses the official API when credentials are configured.
 // Otherwise it reads Spotify's public pages and fills in ISRC and disc numbers
 // from Deezer, which is best effort: a failed lookup only costs those tags.
-func resolveMetadata(ctx context.Context, cfg config.Config, ref spotify.Ref) ([]spotify.Track, error) {
+func resolveMetadata(ctx context.Context, cfg config.Config, ref spotify.Ref) (spotify.Collection, error) {
 	if cfg.HasAPICredentials() {
 		slog.DebugContext(ctx, "metadata source: Spotify Web API")
 		return spotify.NewAPI(cfg.Spotify.ClientID, cfg.Spotify.ClientSecret).Resolve(ctx, ref)
 	}
 
 	slog.DebugContext(ctx, "metadata source: Spotify public pages + Deezer")
-	tracks, err := spotify.NewWeb("").Resolve(ctx, ref)
+	col, err := spotify.NewWeb("").Resolve(ctx, ref)
 	if err != nil {
-		return nil, err
+		return spotify.Collection{}, err
 	}
 
 	dz := deezer.New("")
 	if ref.Kind == spotify.KindAlbum {
-		err = dz.EnrichAlbum(ctx, tracks)
+		err = dz.EnrichAlbum(ctx, col.Tracks)
 	} else {
-		for i := range tracks {
-			if err = dz.EnrichTrack(ctx, &tracks[i]); err != nil {
+		for i := range col.Tracks {
+			if err = dz.EnrichTrack(ctx, &col.Tracks[i]); err != nil {
 				break
 			}
 		}
 	}
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return spotify.Collection{}, ctx.Err()
 		}
 		slog.WarnContext(ctx, "Deezer lookup failed; ISRC and disc numbers may be missing", "err", err)
 	}
-	return tracks, nil
+	return col, nil
 }
 
 func configCmd(args []string, stdout, stderr io.Writer) int {

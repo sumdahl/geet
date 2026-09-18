@@ -57,18 +57,21 @@ func TestAPIResolve(t *testing.T) {
 		"/albums/alb/tracks?offset=2&limit=2":                   "album_tracks_2.json",
 		"/tracks?ids=t1%2Ct2%2Ct3":                              "tracks_batch.json",
 		"/playlists/pl/tracks?limit=100&additional_types=track": "playlist_1.json",
+		"/playlists/pl?fields=name":                             "playlist_meta.json",
 		"/playlists/pl/tracks?offset=3&limit=100":               "playlist_2.json",
 	}
 	c := newTestAPI(t, routes)
 
 	tests := []struct {
-		name string
-		ref  Ref
-		want []Track
+		name     string
+		ref      Ref
+		wantName string
+		want     []Track
 	}{
 		{
-			name: "track picks largest cover and parses year",
-			ref:  Ref{KindTrack, "5ghIJDpPoe3CfHMGu71E6T"},
+			name:     "track picks largest cover and parses year",
+			ref:      Ref{KindTrack, "5ghIJDpPoe3CfHMGu71E6T"},
+			wantName: "Bohemian Rhapsody",
 			want: []Track{{
 				ID: "5ghIJDpPoe3CfHMGu71E6T", Title: "Bohemian Rhapsody", Artists: []string{"Queen"},
 				AlbumArtist: "Queen", Album: "A Night at the Opera", CoverURL: "https://i.scdn.co/image/640",
@@ -76,8 +79,9 @@ func TestAPIResolve(t *testing.T) {
 			}},
 		},
 		{
-			name: "album pages tracks and fills ISRC from batch lookup",
-			ref:  Ref{KindAlbum, "alb"},
+			name:     "album pages tracks and fills ISRC from batch lookup",
+			ref:      Ref{KindAlbum, "alb"},
+			wantName: "Split Album",
 			want: []Track{
 				{ID: "t1", Title: "One", Artists: []string{"Alpha"}, AlbumArtist: "Alpha, Beta", Album: "Split Album",
 					CoverURL: "https://img/a640", TrackNumber: 1, DiscNumber: 1, Year: 2011, Duration: time.Second, ISRC: "ISRC0001"},
@@ -88,8 +92,9 @@ func TestAPIResolve(t *testing.T) {
 			},
 		},
 		{
-			name: "playlist pages and skips null, episode and local items",
-			ref:  Ref{KindPlaylist, "pl"},
+			name:     "playlist pages and skips null, episode and local items",
+			ref:      Ref{KindPlaylist, "pl"},
+			wantName: "Road Trip Mix",
 			want: []Track{
 				{ID: "p1", Title: "First", Artists: []string{"A"}, AlbumArtist: "A", Album: "AlbA",
 					TrackNumber: 3, DiscNumber: 1, Year: 2020, Duration: 3 * time.Minute, ISRC: "PISRC1"},
@@ -104,8 +109,11 @@ func TestAPIResolve(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("got  %+v\nwant %+v", got, tt.want)
+			if got.Name != tt.wantName || got.Ref != tt.ref {
+				t.Errorf("collection %q %+v, want %q %+v", got.Name, got.Ref, tt.wantName, tt.ref)
+			}
+			if !reflect.DeepEqual(got.Tracks, tt.want) {
+				t.Errorf("got  %+v\nwant %+v", got.Tracks, tt.want)
 			}
 		})
 	}

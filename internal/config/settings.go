@@ -23,6 +23,8 @@ func (c *Config) Settings() []Setting {
 	return []Setting{
 		{Key: "output", Usage: "music library directory", ptr: &c.Output},
 		{Key: "output_template", Usage: "file path under output, without extension; placeholders: " + libraryPlaceholders(), ptr: &c.OutputTemplate},
+		{Key: "playlist_folder", Usage: "put a playlist's tracks in a folder named after it, inside output", ptr: &c.PlaylistFolder},
+		{Key: "playlist_folder_case", Usage: "playlist folder letter case: lower (road-trip-mix), capitalize (Road-trip-mix) or title (Road-Trip-Mix)", ptr: &c.PlaylistFolderCase},
 		{Key: "format", Usage: "audio format: opus, flac or mp3", ptr: &c.Format},
 		{Key: "bitrate", Usage: `audio bitrate such as 320k; empty means best available`, ptr: &c.Bitrate},
 		{Key: "overwrite", Usage: "re-download tracks whose file already exists instead of skipping them", ptr: &c.Overwrite},

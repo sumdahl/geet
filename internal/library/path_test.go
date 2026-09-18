@@ -101,3 +101,33 @@ func TestValidateTemplate(t *testing.T) {
 		}
 	}
 }
+
+func TestFolderName(t *testing.T) {
+	tests := []struct {
+		name, letterCase, want string
+	}{
+		{"Playlist 1", "lower", "playlist-1"},
+		{"Road Trip Mix", "lower", "road-trip-mix"},
+		{"Road Trip Mix", "capitalize", "Road-trip-mix"},
+		{"road trip MIX", "title", "Road-Trip-Mix"},
+		{"Spotify's Most Played All-Time [Updated Weekly] | Most Streamed", "lower", "spotifys-most-played-all-time-updated-weekly-most-streamed"},
+		{"  chill 🔥 vibes!!  2024  ", "lower", "chill-vibes-2024"},
+		{"lo_fi / study.beats", "lower", "lo-fi-study-beats"},
+		{"नेपाली गीतहरू", "title", "नेपाली-गीतहरू"},
+		{"Beyoncé's Hits", "title", "Beyoncés-Hits"},
+		{"🔥🔥🔥", "lower", "playlist"},
+		{"", "lower", "playlist"},
+	}
+	for _, tt := range tests {
+		if got := FolderName(tt.name, tt.letterCase); got != tt.want {
+			t.Errorf("FolderName(%q, %s) = %q, want %q", tt.name, tt.letterCase, got, tt.want)
+		}
+	}
+}
+
+func TestFolderNameLength(t *testing.T) {
+	got := FolderName(strings.Repeat("verylongword ", 30), "lower")
+	if len(got) > maxFolderBytes || strings.HasSuffix(got, "-") || strings.Contains(got, " ") {
+		t.Errorf("got %d bytes: %q", len(got), got)
+	}
+}

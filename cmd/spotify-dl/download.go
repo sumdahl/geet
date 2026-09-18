@@ -117,15 +117,20 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	}
 
 	fmt.Fprintf(stderr, "Reading %s %s from Spotify…\n", ref.Kind, ref.ID)
-	tracks, err := resolveMetadata(ctx, cfg, ref)
+	col, err := resolveMetadata(ctx, cfg, ref)
 	if err != nil {
 		return rep.fatal(err)
 	}
-	fmt.Fprintf(stderr, "%d track(s) → %s\n", len(tracks), cfg.Output)
+	tracks := col.Tracks
+	root := cfg.Output
+	if ref.Kind == spotify.KindPlaylist && cfg.PlaylistFolder {
+		root = filepath.Join(cfg.Output, library.FolderName(col.Name, cfg.PlaylistFolderCase))
+	}
+	fmt.Fprintf(stderr, "%s %q: %d track(s) → %s\n", ref.Kind, col.Name, len(tracks), root)
 
 	rep.ui = chooseUI(cfg.Progress, stderr, c.json)
 	setupLogging(rep.ui.writer(), c.verbose)
-	d := newDownloader(cfg, rep)
+	d := newDownloader(cfg, root, rep)
 	failed := 0
 	for i, t := range tracks {
 		err := d.track(ctx, t, i+1, len(tracks))
@@ -150,13 +155,14 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 }
 
 type downloader struct {
-	cfg config.Config
-	yt  *youtube.Resolver
-	ytd ytdlp.Runner
-	rep *reporter
+	cfg  config.Config
+	root string // output, or the playlist's folder inside it
+	yt   *youtube.Resolver
+	ytd  ytdlp.Runner
+	rep  *reporter
 }
 
-func newDownloader(cfg config.Config, rep *reporter) *downloader {
+func newDownloader(cfg config.Config, root string, rep *reporter) *downloader {
 	ytd := ytdlp.Runner{
 		Binary:             cfg.Tools.YtDlp,
 		CookiesFile:        cfg.YouTube.CookiesFile,
@@ -164,9 +170,10 @@ func newDownloader(cfg config.Config, rep *reporter) *downloader {
 		ExtraArgs:          cfg.YouTube.ExtraArgs,
 	}
 	return &downloader{
-		cfg: cfg,
-		ytd: ytd,
-		rep: rep,
+		cfg:  cfg,
+		root: root,
+		ytd:  ytd,
+		rep:  rep,
 		yt: youtube.New(youtube.Options{
 			YtDlp:           ytd,
 			SearchQuery:     cfg.YouTube.SearchQuery,
@@ -193,7 +200,7 @@ func (d *downloader) track(ctx context.Context, t spotify.Track, index, total in
 		}
 	}()
 
-	dest := library.Path(d.cfg.Output, d.cfg.OutputTemplate, t, d.cfg.Format)
+	dest := library.Path(d.root, d.cfg.OutputTemplate, t, d.cfg.Format)
 	ev.Path = dest
 	if !d.cfg.Overwrite {
 		if _, err := os.Stat(dest); err == nil {
@@ -212,10 +219,10 @@ func (d *downloader) track(ctx context.Context, t spotify.Track, index, total in
 
 	// The work directory sits inside the library so the finished file can be
 	// renamed into place atomically instead of copied across filesystems.
-	if err := os.MkdirAll(d.cfg.Output, 0o755); err != nil {
+	if err := os.MkdirAll(d.root, 0o755); err != nil {
 		return err
 	}
-	work, err := os.MkdirTemp(d.cfg.Output, ".spotify-dl-")
+	work, err := os.MkdirTemp(d.root, ".spotify-dl-")
 	if err != nil {
 		return err
 	}

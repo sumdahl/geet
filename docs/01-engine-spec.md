@@ -73,6 +73,11 @@ One ffmpeg pass per track: convert, tag, embed cover.
   `.{format}`. Album/cover/track metadata lives in the file's tags, not
   the folder layout; users wanting `{album_artist}/{album}/{track} {title}`
   set it in config.
+- Playlists (only) go one level deeper, into a folder named after the
+  playlist (`playlist_folder`, default on): no spaces, words joined by `-`,
+  apostrophes dropped, other punctuation/emoji removed, any script kept;
+  case per `playlist_folder_case` = `lower` (default, `road-trip-mix`),
+  `capitalize` (`Road-trip-mix`) or `title` (`Road-Trip-Mix`).
 - Placeholders: `{title} {artist} {artists} {album} {album_artist} {track}
   {disc} {year} {isrc} {spotify_id}`. Each `/`-separated template segment
   is exactly one path component; values are sanitized (no `/`, FAT-unsafe

@@ -63,20 +63,22 @@ func NewAPI(clientID, clientSecret string, opts ...Option) *API {
 	return &API{http: hc, baseURL: strings.TrimRight(o.baseURL, "/")}
 }
 
-func (c *API) Resolve(ctx context.Context, ref Ref) ([]Track, error) {
+func (c *API) Resolve(ctx context.Context, ref Ref) (Collection, error) {
 	switch ref.Kind {
 	case KindTrack:
 		t, err := c.Track(ctx, ref.ID)
 		if err != nil {
-			return nil, err
+			return Collection{}, err
 		}
-		return []Track{t}, nil
+		return collect(ref, "", []Track{t}), nil
 	case KindAlbum:
-		return c.Album(ctx, ref.ID)
+		tracks, err := c.Album(ctx, ref.ID)
+		return collect(ref, "", tracks), err
 	case KindPlaylist:
-		return c.Playlist(ctx, ref.ID)
+		name, tracks, err := c.Playlist(ctx, ref.ID)
+		return collect(ref, name, tracks), err
 	default:
-		return nil, fmt.Errorf("%w: unsupported type %q", ErrInvalidURL, ref.Kind)
+		return Collection{}, fmt.Errorf("%w: unsupported type %q", ErrInvalidURL, ref.Kind)
 	}
 }
 
@@ -147,7 +149,13 @@ func (c *API) fillISRC(ctx context.Context, tracks []Track) error {
 	return nil
 }
 
-func (c *API) Playlist(ctx context.Context, id string) ([]Track, error) {
+func (c *API) Playlist(ctx context.Context, id string) (string, []Track, error) {
+	var meta struct {
+		Name string `json:"name"`
+	}
+	if err := c.get(ctx, c.baseURL+"/playlists/"+url.PathEscape(id)+"?fields=name", &meta); err != nil {
+		return "", nil, fmt.Errorf("fetching playlist %s: %w", id, err)
+	}
 	type item struct {
 		Track *apiTrack `json:"track"`
 	}
@@ -156,7 +164,7 @@ func (c *API) Playlist(ctx context.Context, id string) ([]Track, error) {
 	for next != "" {
 		var p page[item]
 		if err := c.get(ctx, next, &p); err != nil {
-			return nil, fmt.Errorf("fetching playlist %s: %w", id, err)
+			return "", nil, fmt.Errorf("fetching playlist %s: %w", id, err)
 		}
 		for _, it := range p.Items {
 			switch {
@@ -172,7 +180,7 @@ func (c *API) Playlist(ctx context.Context, id string) ([]Track, error) {
 		}
 		next = p.Next
 	}
-	return tracks, nil
+	return meta.Name, tracks, nil
 }
 
 func (c *API) get(ctx context.Context, u string, v any) error {

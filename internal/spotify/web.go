@@ -64,20 +64,22 @@ func NewWeb(baseURL string) *Web {
 	}
 }
 
-func (w *Web) Resolve(ctx context.Context, ref Ref) ([]Track, error) {
+func (w *Web) Resolve(ctx context.Context, ref Ref) (Collection, error) {
 	switch ref.Kind {
 	case KindTrack:
 		t, err := w.Track(ctx, ref.ID)
 		if err != nil {
-			return nil, err
+			return Collection{}, err
 		}
-		return []Track{t}, nil
+		return collect(ref, "", []Track{t}), nil
 	case KindAlbum:
-		return w.Album(ctx, ref.ID)
+		tracks, err := w.Album(ctx, ref.ID)
+		return collect(ref, "", tracks), err
 	case KindPlaylist:
-		return w.Playlist(ctx, ref.ID)
+		name, tracks, err := w.Playlist(ctx, ref.ID)
+		return collect(ref, name, tracks), err
 	default:
-		return nil, fmt.Errorf("%w: unsupported type %q", ErrInvalidURL, ref.Kind)
+		return Collection{}, fmt.Errorf("%w: unsupported type %q", ErrInvalidURL, ref.Kind)
 	}
 }
 
@@ -156,10 +158,10 @@ func (w *Web) Album(ctx context.Context, id string) ([]Track, error) {
 	return tracks, nil
 }
 
-func (w *Web) Playlist(ctx context.Context, id string) ([]Track, error) {
+func (w *Web) Playlist(ctx context.Context, id string) (string, []Track, error) {
 	e, err := w.embed(ctx, KindPlaylist, id)
 	if err != nil {
-		return nil, fmt.Errorf("fetching playlist %s: %w", id, err)
+		return "", nil, fmt.Errorf("fetching playlist %s: %w", id, err)
 	}
 	if len(e.TrackList) >= embedPlaylistCap {
 		slog.WarnContext(ctx, "Spotify's public playlist view lists at most 100 tracks; any after that are skipped", "playlist", id)
@@ -177,11 +179,11 @@ func (w *Web) Playlist(ctx context.Context, id string) ([]Track, error) {
 			continue
 		}
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
 		tracks = append(tracks, t)
 	}
-	return tracks, nil
+	return e.Name, tracks, nil
 }
 
 func (w *Web) album(ctx context.Context, id string) (*webAlbum, error) {

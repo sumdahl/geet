@@ -29,17 +29,19 @@ var (
 )
 
 type Config struct {
-	Output         string  `toml:"output" json:"output"`
-	OutputTemplate string  `toml:"output_template" json:"output_template"`
-	Format         string  `toml:"format" json:"format"`
-	Bitrate        string  `toml:"bitrate" json:"bitrate"`
-	Overwrite      bool    `toml:"overwrite" json:"overwrite"`
-	Progress       string  `toml:"progress" json:"progress"`
-	Jobs           int     `toml:"jobs" json:"jobs"`
-	ResolveJobs    int     `toml:"resolve_jobs" json:"resolve_jobs"`
-	Spotify        Spotify `toml:"spotify" json:"spotify"`
-	YouTube        YouTube `toml:"youtube" json:"youtube"`
-	Tools          Tools   `toml:"tools" json:"tools"`
+	Output             string  `toml:"output" json:"output"`
+	OutputTemplate     string  `toml:"output_template" json:"output_template"`
+	PlaylistFolder     bool    `toml:"playlist_folder" json:"playlist_folder"`
+	PlaylistFolderCase string  `toml:"playlist_folder_case" json:"playlist_folder_case"`
+	Format             string  `toml:"format" json:"format"`
+	Bitrate            string  `toml:"bitrate" json:"bitrate"`
+	Overwrite          bool    `toml:"overwrite" json:"overwrite"`
+	Progress           string  `toml:"progress" json:"progress"`
+	Jobs               int     `toml:"jobs" json:"jobs"`
+	ResolveJobs        int     `toml:"resolve_jobs" json:"resolve_jobs"`
+	Spotify            Spotify `toml:"spotify" json:"spotify"`
+	YouTube            YouTube `toml:"youtube" json:"youtube"`
+	Tools              Tools   `toml:"tools" json:"tools"`
 }
 
 // Spotify credentials are optional: with none, metadata comes from Spotify's
@@ -80,12 +82,14 @@ func (d *Duration) UnmarshalText(b []byte) error {
 
 func Default() Config {
 	return Config{
-		Output:         "~/Music",
-		OutputTemplate: library.DefaultTemplate,
-		Format:         "opus",
-		Progress:       "auto",
-		Jobs:           4,
-		ResolveJobs:    8,
+		Output:             "~/Music",
+		OutputTemplate:     library.DefaultTemplate,
+		PlaylistFolder:     true,
+		PlaylistFolderCase: "lower",
+		Format:             "opus",
+		Progress:           "auto",
+		Jobs:               4,
+		ResolveJobs:        8,
 		YouTube: YouTube{
 			SearchQuery:     "{artists} - {title}",
 			SearchResults:   5,
@@ -162,6 +166,9 @@ func (c Config) Validate() error {
 	}
 	if err := library.ValidateTemplate(c.OutputTemplate); err != nil {
 		errs = append(errs, fmt.Errorf("output_template: %w", err))
+	}
+	if !slices.Contains(library.FolderCases, c.PlaylistFolderCase) {
+		errs = append(errs, fmt.Errorf("playlist_folder_case %q must be one of %s", c.PlaylistFolderCase, strings.Join(library.FolderCases, ", ")))
 	}
 	if !slices.Contains(formats, c.Format) {
 		errs = append(errs, fmt.Errorf("format %q must be one of %s", c.Format, strings.Join(formats, ", ")))

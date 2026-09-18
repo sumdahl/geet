@@ -147,3 +147,57 @@ func truncate(s string, max int) string {
 	}
 	return strings.TrimRight(s[:max], " .")
 }
+
+// FolderCases are the letter-case styles FolderName accepts.
+var FolderCases = []string{"lower", "capitalize", "title"}
+
+const maxFolderBytes = 100
+
+// FolderName turns a playlist name into a directory name without spaces:
+// words joined by hyphens, apostrophes dropped ("Spotify's" → "spotifys"),
+// all other punctuation, symbols and emoji removed. Letters of every script
+// are kept. letterCase is lower ("road-trip-mix"), capitalize
+// ("Road-trip-mix") or title ("Road-Trip-Mix").
+func FolderName(name, letterCase string) string {
+	var words []string
+	var word strings.Builder
+	flush := func() {
+		if word.Len() > 0 {
+			words = append(words, strings.ToLower(word.String()))
+			word.Reset()
+		}
+	}
+	for _, r := range name {
+		switch {
+		case r == '\'' || r == '’' || r == '`':
+		case unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsMark(r):
+			word.WriteRune(r)
+		default:
+			flush()
+		}
+	}
+	flush()
+	if len(words) == 0 {
+		return "playlist"
+	}
+
+	for i, w := range words {
+		if letterCase == "title" || (letterCase == "capitalize" && i == 0) {
+			words[i] = upperFirst(w)
+		}
+	}
+
+	out := words[0]
+	for _, w := range words[1:] {
+		if len(out)+1+len(w) > maxFolderBytes {
+			break
+		}
+		out += "-" + w
+	}
+	return truncate(out, maxFolderBytes)
+}
+
+func upperFirst(s string) string {
+	r, size := utf8.DecodeRuneInString(s)
+	return string(unicode.ToUpper(r)) + s[size:]
+}

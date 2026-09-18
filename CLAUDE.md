@@ -41,7 +41,8 @@ A Go CLI that takes a Spotify track, album or playlist URL, gets its metadata (s
   - `yt-dlp ytsearchN:<query> --flat-playlist --dump-json` (about 1.5s), then scoring in `score.go`, which keeps every candidate's score or rejection reason (`-v` logs them).
   - `testdata/*.ndjson` are real searches. When a live search picks wrong, capture it as a fixture and add a case to `TestBestOnRealSearches` before changing weights.
   - `testdata/fake-yt-dlp` stands in for the binary in tests.
-- `internal/library`: output path = `output` + `output_template` + extension. Each template segment is exactly one path component, sanitized.
+- `internal/library`: output path = `output` (plus `FolderName(playlist)` for playlists) + `output_template` + extension. Each template segment is exactly one path component, sanitized.
+- Resolving a link returns a `spotify.Collection` (ref, name, tracks). The name is what the playlist folder is named after.
 - `internal/textnorm`: shared title/name normalization. It keeps Unicode marks so Devanagari words don't split apart.
 - `internal/ytdlp`: the shared yt-dlp runner (cookies and extra args), used by both search and download.
 - `internal/download`: fetches the raw best audio only. It deliberately avoids `--extract-audio`, which ignores the requested bitrate when the codecs match.

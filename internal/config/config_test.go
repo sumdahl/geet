@@ -61,17 +61,19 @@ client_secret = "secret"
 			name:  "env beats file, flag beats env",
 			body:  "jobs = 2\nformat = \"flac\"\n",
 			env:   map[string]string{"SPOTIFY_DL_JOBS": "3", "SPOTIFY_DL_FORMAT": "mp3", "SPOTIFY_DL_YOUTUBE_SEARCH_RESULTS": "9", "SPOTIFY_DL_OVERWRITE": "1"},
-			flags: map[string]string{"jobs": "5", "youtube.extra_args": "--proxy socks5://x"},
+			flags: map[string]string{"jobs": "5", "youtube.extra_args": "--proxy socks5://x", "playlist_folder": "false"},
 			want: func(c *Config) {
 				c.Jobs = 5
 				c.Format = "mp3"
 				c.YouTube.SearchResults = 9
 				c.Overwrite = true
+				c.PlaylistFolder = false
 				c.YouTube.ExtraArgs = []string{"--proxy", "socks5://x"}
 			},
 		},
 		{name: "unknown key", body: "fromat = \"mp3\"\n", wantErr: ErrInvalid},
 		{name: "half the credentials", body: "[spotify]\nclient_id = \"id\"\n", wantErr: ErrInvalid},
+		{name: "bad folder case", flags: map[string]string{"playlist_folder_case": "UPPER"}, wantErr: ErrInvalid},
 		{name: "bad progress", flags: map[string]string{"progress": "sometimes"}, wantErr: ErrInvalid},
 		{name: "unknown format", body: "format = \"wav\"\n", wantErr: ErrInvalid},
 		{name: "bad bitrate", flags: map[string]string{"bitrate": "loud"}, wantErr: ErrInvalid},

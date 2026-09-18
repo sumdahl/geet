@@ -62,14 +62,15 @@ func TestWebResolve(t *testing.T) {
 		CoverURL: "https://img/g", TrackNumber: 7, Year: 1999, Duration: 200 * time.Second}
 
 	tests := []struct {
-		name string
-		ref  Ref
-		want []Track
+		name     string
+		ref      Ref
+		wantName string
+		want     []Track
 	}{
-		{"track joins page meta with album listing", Ref{KindTrack, "t2"}, []Track{two}},
-		{"track missing from album listing falls back to meta tags", Ref{KindTrack, "tx"}, []Track{loner}},
-		{"album numbers by position and takes year from a track page", Ref{KindAlbum, "alb"}, []Track{one, two}},
-		{"playlist skips episodes and removed tracks", Ref{KindPlaylist, "pl"}, []Track{two, loner}},
+		{"track joins page meta with album listing", Ref{KindTrack, "t2"}, "Two", []Track{two}},
+		{"track missing from album listing falls back to meta tags", Ref{KindTrack, "tx"}, "Loner & Friends", []Track{loner}},
+		{"album numbers by position and takes year from a track page", Ref{KindAlbum, "alb"}, "Split Album", []Track{one, two}},
+		{"playlist skips episodes and removed tracks", Ref{KindPlaylist, "pl"}, "Mix", []Track{two, loner}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -77,8 +78,11 @@ func TestWebResolve(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("got  %+v\nwant %+v", got, tt.want)
+			if got.Name != tt.wantName {
+				t.Errorf("name %q, want %q", got.Name, tt.wantName)
+			}
+			if !reflect.DeepEqual(got.Tracks, tt.want) {
+				t.Errorf("got  %+v\nwant %+v", got.Tracks, tt.want)
 			}
 		})
 	}
