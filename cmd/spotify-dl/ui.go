@@ -67,8 +67,10 @@ func (plainPhase) set(int, int) {}
 func (plainPhase) finish()      {}
 
 func (u *plainUI) track(index, total int, name string) trackUI {
-	u.log("[%d/%d] %s", index, total, name)
-	return plainTrack{u}
+	// Tracks run concurrently, so every line carries its track number.
+	t := plainTrack{u: u, tag: fmt.Sprintf("[%*d/%d]", len(fmt.Sprint(total)), index, total)}
+	u.log("%s %s", t.tag, name)
+	return t
 }
 
 func (u *plainUI) log(format string, args ...any) {
@@ -80,27 +82,30 @@ func (u *plainUI) log(format string, args ...any) {
 func (u *plainUI) writer() io.Writer { return u.w }
 func (u *plainUI) close(bool)        {}
 
-type plainTrack struct{ u *plainUI }
+type plainTrack struct {
+	u   *plainUI
+	tag string
+}
 
 func (t plainTrack) stage(e event) {
 	switch e.Stage {
 	case "resolved":
-		t.u.log("       match  %s", e.YouTubeURL)
+		t.u.log("%s match  %s", t.tag, e.YouTubeURL)
 	case "done":
 		switch {
 		case e.DuplicateOf != "" && e.Skipped:
-			t.u.log("       have   %s (not added here: duplicates = skip)", e.DuplicateOf)
+			t.u.log("%s have   %s (not added here: duplicates = skip)", t.tag, e.DuplicateOf)
 		case e.DuplicateOf != "" && e.Linked:
-			t.u.log("       linked %s (same file as %s)", e.Path, e.DuplicateOf)
+			t.u.log("%s linked %s (same file as %s)", t.tag, e.Path, e.DuplicateOf)
 		case e.DuplicateOf != "":
-			t.u.log("       copied %s (from %s)", e.Path, e.DuplicateOf)
+			t.u.log("%s copied %s (from %s)", t.tag, e.Path, e.DuplicateOf)
 		case e.Skipped:
-			t.u.log("       exists %s", e.Path)
+			t.u.log("%s exists %s", t.tag, e.Path)
 		default:
-			t.u.log("       saved  %s", e.Path)
+			t.u.log("%s saved  %s", t.tag, e.Path)
 		}
 	case "failed":
-		t.u.log("       ✗ %s", e.Error)
+		t.u.log("%s ✗ %s", t.tag, e.Error)
 	}
 }
 
@@ -226,8 +231,10 @@ func (t *barTrack) status(decor.Statistics) string {
 	defer t.mu.Unlock()
 	spin := t.ui.paint("36", spinner[int(time.Since(t.started)/(80*time.Millisecond))%len(spinner)])
 	switch t.stageName {
-	case "", "resolved":
+	case "":
 		return spin + " finding on YouTube"
+	case "resolved":
+		return t.ui.paint("2", "· queued for download")
 	case "downloading":
 		if t.total <= 0 {
 			return spin + " downloading"

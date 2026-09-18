@@ -31,3 +31,17 @@ limits it — not one goroutine-per-track for the whole job:
   not just at the end, so `--json` consumers see
   `resolved → downloading → tagging → done` in real time rather than one
   lump at completion. See `03-communication-contract.md`.
+
+## As built
+- `internal/pipeline.Run` is generic: stages with worker counts, bounded
+  channels, `errgroup` with one shared context. A stage returning `done`
+  ends an item early (exists / linked); a per-item error ends only that
+  item; an error the caller marks fatal (missing yt-dlp/ffmpeg) or Ctrl+C
+  stops everything. `pipeline_test.go` covers routing, per-stage bounds,
+  fatal stop, and a mid-flight cancel with zero leaked goroutines.
+- Stages in `cmd/spotify-dl/download.go`: **resolve** (skip existing →
+  Deezer tags → duplicate link → YouTube search), **download** (retries),
+  **tag** (fixed 2; encode, rename into place, index).
+- Before the pipeline, reading a playlist from Spotify's pages is itself
+  parallel (`resolve_jobs` wide, order kept, HTTP 429 retried).
+- Measured: a 50-track playlist in ~76s (was ~6 min sequentially).

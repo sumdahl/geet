@@ -39,6 +39,8 @@ as a stable API even before the plugin exists.
   | `step` | `reading` only: `index` (first run: scanning existing downloads), `spotify` (reading a playlist's tracks), `tags` (Deezer lookups); `index`/`total` count items done |
   | `progress` | repeated `downloading` events, one per 10% step: `0.1` … `1` (the first `downloading` event has none) |
 
+  Tracks are processed concurrently, so events of different tracks
+  interleave: key them by `index` (or `spotify_id`), not by line order.
   Fields are only ever added, never renamed or removed; consumers must
   ignore unknown fields. Absent optional fields mean false/empty.
 - Exit codes:

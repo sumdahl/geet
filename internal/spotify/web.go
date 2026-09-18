@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -44,7 +46,10 @@ type Web struct {
 
 	// OnProgress, if set, is called as a playlist's tracks are read, one
 	// page lookup per track, which is the slow part of resolving a playlist.
+	// Calls may come from several goroutines, but never at the same time.
 	OnProgress func(done, total int)
+	// Workers is how many playlist tracks are read at once (default 1).
+	Workers int
 
 	mu     sync.Mutex
 	albums map[string]*webAlbum
@@ -171,27 +176,52 @@ func (w *Web) Playlist(ctx context.Context, id string) (string, []Track, error) 
 		slog.WarnContext(ctx, "Spotify's public playlist view lists at most 100 tracks; any after that are skipped", "playlist", id)
 	}
 
-	var tracks []Track
-	for i, it := range e.TrackList {
+	// Read tracks in parallel, keeping playlist order: results[i] stays nil
+	// for an item that is skipped.
+	results := make([]*Track, len(e.TrackList))
+	var mu sync.Mutex
+	done := 0
+	progress := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		done++
 		if w.OnProgress != nil {
-			w.OnProgress(i, len(e.TrackList))
+			w.OnProgress(done, len(e.TrackList))
 		}
-		if it.EntityType != "" && it.EntityType != "track" {
-			slog.DebugContext(ctx, "skipping non-track item", "playlist", id, "type", it.EntityType, "title", it.Title)
-			continue
-		}
-		t, err := w.Track(ctx, itemID(it))
-		if errors.Is(err, ErrNotFound) {
-			slog.WarnContext(ctx, "skipping unavailable track", "playlist", id, "title", it.Title)
-			continue
-		}
-		if err != nil {
-			return "", nil, err
-		}
-		tracks = append(tracks, t)
 	}
 	if w.OnProgress != nil {
-		w.OnProgress(len(e.TrackList), len(e.TrackList))
+		w.OnProgress(0, len(e.TrackList))
+	}
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(max(w.Workers, 1))
+	for i, it := range e.TrackList {
+		g.Go(func() error {
+			defer progress()
+			if it.EntityType != "" && it.EntityType != "track" {
+				slog.DebugContext(gctx, "skipping non-track item", "playlist", id, "type", it.EntityType, "title", it.Title)
+				return nil
+			}
+			t, err := w.Track(gctx, itemID(it))
+			if errors.Is(err, ErrNotFound) {
+				slog.WarnContext(gctx, "skipping unavailable track", "playlist", id, "title", it.Title)
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			results[i] = &t
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return "", nil, err
+	}
+
+	var tracks []Track
+	for _, t := range results {
+		if t != nil {
+			tracks = append(tracks, *t)
+		}
 	}
 	return e.Name, tracks, nil
 }
@@ -300,25 +330,41 @@ func (w *Web) trackMeta(ctx context.Context, id string) (map[string][]string, er
 	return meta, nil
 }
 
+// fetch GETs u, retrying a few times when Spotify rate-limits (HTTP 429),
+// which parallel playlist reads can trigger.
 func (w *Web) fetch(ctx context.Context, u, userAgent string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, err
+	const attempts = 4
+	for attempt := 1; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("User-Agent", userAgent)
+		req.Header.Set("Accept-Language", "en")
+		resp, err := w.http.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode == http.StatusTooManyRequests && attempt < attempts {
+			wait := retryAfter(resp.Header.Get("Retry-After")) * time.Duration(attempt)
+			resp.Body.Close()
+			slog.DebugContext(ctx, "spotify rate limited", "url", u, "retry_in", wait)
+			select {
+			case <-time.After(wait):
+				continue
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		defer resp.Body.Close()
+		switch {
+		case resp.StatusCode == http.StatusNotFound:
+			return nil, fmt.Errorf("%s: %w", u, ErrNotFound)
+		case resp.StatusCode/100 != 2:
+			return nil, fmt.Errorf("%s: HTTP %d", u, resp.StatusCode)
+		}
+		return io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	}
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Accept-Language", "en")
-	resp, err := w.http.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	switch {
-	case resp.StatusCode == http.StatusNotFound:
-		return nil, fmt.Errorf("%s: %w", u, ErrNotFound)
-	case resp.StatusCode/100 != 2:
-		return nil, fmt.Errorf("%s: HTTP %d", u, resp.StatusCode)
-	}
-	return io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 }
 
 func first(meta map[string][]string, k string) string {

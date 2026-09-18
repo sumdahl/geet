@@ -153,48 +153,46 @@ func setupLogging(w io.Writer, verbose bool) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level})))
 }
 
-// resolveMetadata uses the official API when credentials are configured.
-// Otherwise it reads Spotify's public pages and fills in ISRC and disc numbers
-// from Deezer, which is best effort: a failed lookup only costs those tags.
+// resolveMetadata reads the link's tracks: from the official API when
+// credentials are configured, otherwise from Spotify's public pages. Those
+// lack ISRC and disc numbers, which come from Deezer (best effort: a failed
+// lookup only costs those tags). An album's are looked up here in one go;
+// for single tracks and playlists lateTags is true, and they are looked up
+// per track in the pipeline, skipping tracks already downloaded.
 //
-// report, if set, is told how far each slow step has got: step "spotify"
-// while reading a playlist's tracks, then "tags" during the Deezer lookups.
-func resolveMetadata(ctx context.Context, cfg config.Config, ref spotify.Ref, report func(step string, done, total int)) (spotify.Collection, error) {
+// report, if set, is told how far each slow step has got: "spotify" while
+// reading a playlist's tracks, "tags" during an album's Deezer lookup.
+func resolveMetadata(ctx context.Context, cfg config.Config, ref spotify.Ref, report func(step string, done, total int)) (col spotify.Collection, lateTags bool, err error) {
 	if report == nil {
 		report = func(string, int, int) {}
 	}
 	if cfg.HasAPICredentials() {
 		slog.DebugContext(ctx, "metadata source: Spotify Web API")
-		return spotify.NewAPI(cfg.Spotify.ClientID, cfg.Spotify.ClientSecret).Resolve(ctx, ref)
+		col, err := spotify.NewAPI(cfg.Spotify.ClientID, cfg.Spotify.ClientSecret).Resolve(ctx, ref)
+		return col, false, err
 	}
 
 	slog.DebugContext(ctx, "metadata source: Spotify public pages + Deezer")
 	web := spotify.NewWeb("")
+	web.Workers = cfg.ResolveJobs
 	web.OnProgress = func(done, total int) { report("spotify", done, total) }
-	col, err := web.Resolve(ctx, ref)
+	col, err = web.Resolve(ctx, ref)
 	if err != nil {
-		return spotify.Collection{}, err
+		return spotify.Collection{}, false, err
+	}
+	if ref.Kind != spotify.KindAlbum {
+		return col, true, nil
 	}
 
-	dz := deezer.New("")
-	if ref.Kind == spotify.KindAlbum {
-		err = dz.EnrichAlbum(ctx, col.Tracks)
-	} else {
-		for i := range col.Tracks {
-			report("tags", i, len(col.Tracks))
-			if err = dz.EnrichTrack(ctx, &col.Tracks[i]); err != nil {
-				break
-			}
-		}
-		report("tags", len(col.Tracks), len(col.Tracks))
-	}
-	if err != nil {
+	report("tags", 0, len(col.Tracks))
+	if err := deezer.New("").EnrichAlbum(ctx, col.Tracks); err != nil {
 		if ctx.Err() != nil {
-			return spotify.Collection{}, ctx.Err()
+			return spotify.Collection{}, false, ctx.Err()
 		}
 		slog.WarnContext(ctx, "Deezer lookup failed; ISRC and disc numbers may be missing", "err", err)
 	}
-	return col, nil
+	report("tags", len(col.Tracks), len(col.Tracks))
+	return col, false, nil
 }
 
 func configCmd(args []string, stdout, stderr io.Writer) int {

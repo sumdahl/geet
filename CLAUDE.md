@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-Deliverables 1–3 are done: `download` works end to end (match, download, convert, tag, embed cover), one track at a time. `watch` is a stub. **Per the roadmap, the user uses the engine by hand now, before deliverable 4 (concurrency) starts.** The docs in `docs/` are the spec, so read the relevant one before implementing a component. `docs/00-overview.md` indexes them.
+Deliverables 1–4 are done. `download` runs end to end (match, download, convert, tag, embed cover) as a concurrent three-stage pipeline (docs/02, "As built"). `watch` is a stub, and deliverable 5 (the clipboard daemon) is next. The docs in `docs/` are the spec, so read the relevant one before implementing a component. `docs/00-overview.md` indexes them.
 
 ## Metadata sources
 
@@ -58,7 +58,7 @@ A Go CLI that takes a Spotify track, album or playlist URL, gets its metadata (s
   - To test the animation headlessly, the pty needs a size: `script -qefc "stty cols 150 rows 40; <cmd>" /dev/null`. With 0 rows mpb draws nothing.
 - `cmd/spotify-dl`: the subcommands `download <url>` and `watch`. `watch` is a daemon that polls `wl-paste` (Wayland, not xclip) about once a second and sends a `notify-send` notification with the cover art. Flags: `--format --output --bitrate --jobs --resolve-jobs --json`.
 
-## Playlist pipeline
+## Playlist pipeline (implemented in `internal/pipeline` and `cmd/spotify-dl/download.go`)
 
 `tracks → [resolve pool] → [download pool] → [tag pool]` (see `docs/02-concurrency-pipeline.md`):
 - Resolve pool defaults to 8 workers (`--resolve-jobs`), download pool to 4 (`--jobs`). The tag pool is fixed at 2 and is not configurable.

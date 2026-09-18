@@ -17,9 +17,11 @@ import (
 
 	"github.com/sumdahl/spotify-dl/internal/audio"
 	"github.com/sumdahl/spotify-dl/internal/config"
+	"github.com/sumdahl/spotify-dl/internal/deezer"
 	"github.com/sumdahl/spotify-dl/internal/download"
 	"github.com/sumdahl/spotify-dl/internal/index"
 	"github.com/sumdahl/spotify-dl/internal/library"
+	"github.com/sumdahl/spotify-dl/internal/pipeline"
 	"github.com/sumdahl/spotify-dl/internal/spotify"
 	"github.com/sumdahl/spotify-dl/internal/youtube"
 	"github.com/sumdahl/spotify-dl/internal/ytdlp"
@@ -30,7 +32,7 @@ import (
 type event struct {
 	Track      string  `json:"track"`
 	Stage      string  `json:"stage"`          // reading|resolved|downloading|tagging|done|failed
-	Step       string  `json:"step,omitempty"` // "reading" only: spotify, then tags
+	Step       string  `json:"step,omitempty"` // "reading" only: index, spotify, tags
 	Error      string  `json:"error,omitempty"`
 	Fatal      bool    `json:"fatal,omitempty"` // the whole run stopped, not just this track
 	SpotifyID  string  `json:"spotify_id,omitempty"`
@@ -156,7 +158,7 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	if ref.Kind != spotify.KindPlaylist {
 		stepOf("spotify")
 	}
-	col, err := resolveMetadata(ctx, cfg, ref, func(step string, done, total int) {
+	col, lateTags, err := resolveMetadata(ctx, cfg, ref, func(step string, done, total int) {
 		stepOf(step).set(done, total)
 		rep.reading(step, done, total)
 	})
@@ -178,18 +180,41 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		return rep.fatal(err)
 	}
 	d := newDownloader(cfg, root, rep, idx)
-	failed := 0
+	if lateTags {
+		d.dz = deezer.New("")
+	}
+	// Per-track work dirs go inside one run dir in the library, so finished
+	// files rename into place atomically and one RemoveAll cleans up even
+	// after Ctrl+C.
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return rep.fatal(err)
+	}
+	if d.work, err = os.MkdirTemp(root, ".spotify-dl-"); err != nil {
+		return rep.fatal(err)
+	}
+	defer os.RemoveAll(d.work)
+
+	jobs := make([]*trackJob, len(tracks))
 	for i, t := range tracks {
-		err := d.track(ctx, t, i+1, len(tracks))
-		switch {
-		case err == nil:
-		case ctx.Err() != nil:
-			return rep.fatal(errors.New("interrupted"))
-		case errors.Is(err, ytdlp.ErrToolMissing), errors.Is(err, audio.ErrToolMissing):
-			return rep.fatal(err)
-		default:
+		jobs[i] = &trackJob{t: t, ev: event{Track: trackName(t), SpotifyID: t.ID, Index: i + 1, Total: len(tracks)}}
+	}
+	failed := 0
+	err = pipeline.Run(ctx, jobs, []pipeline.Stage[*trackJob]{
+		{Name: "resolve", Workers: cfg.ResolveJobs, Do: d.resolve},
+		{Name: "download", Workers: cfg.Jobs, Do: d.download},
+		{Name: "tag", Workers: tagWorkers, Do: d.tag},
+	}, isFatal, func(j *trackJob, err error) {
+		if err != nil {
 			failed++
+			j.ev.Error = err.Error()
+			d.emit(j, "failed")
 		}
+	})
+	switch {
+	case ctx.Err() != nil:
+		return rep.fatal(errors.New("interrupted"))
+	case err != nil:
+		return rep.fatal(err)
 	}
 
 	rep.ui.close(false)
@@ -201,10 +226,20 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	return exitOK
 }
 
+// tagWorkers is fixed: tagging is a short ffmpeg run and never the
+// bottleneck (docs/02-concurrency-pipeline.md).
+const tagWorkers = 2
+
+func isFatal(err error) bool {
+	return errors.Is(err, ytdlp.ErrToolMissing) || errors.Is(err, audio.ErrToolMissing)
+}
+
 type downloader struct {
 	cfg  config.Config
 	root string // output, or the playlist's folder inside it
+	work string // this run's scratch dir inside root
 	idx  *index.Index
+	dz   *deezer.Client // set when tags are looked up per track, in resolve
 	yt   *youtube.Resolver
 	ytd  ytdlp.Runner
 	rep  *reporter
@@ -232,88 +267,103 @@ func newDownloader(cfg config.Config, root string, rep *reporter, idx *index.Ind
 	}
 }
 
-// track takes one track through match → download → tag → move into place,
-// reporting each stage. A returned error has already been reported.
-func (d *downloader) track(ctx context.Context, t spotify.Track, index, total int) (err error) {
-	ev := event{Track: trackName(t), SpotifyID: t.ID, Index: index, Total: total}
-	tu := d.rep.ui.track(index, total, ev.Track)
-	emit := func(stage string) {
-		e := ev
-		e.Stage = stage
-		d.rep.emit(tu, e)
-	}
-	defer func() {
-		if err != nil && ctx.Err() == nil {
-			ev.Error = err.Error()
-			emit("failed")
-		}
-	}()
+// trackJob is one track's trip through the pipeline. Only one stage holds it
+// at a time.
+type trackJob struct {
+	t    spotify.Track
+	ev   event
+	tu   trackUI
+	dest string
+	url  string
+	work string
+	src  download.Source
+}
 
-	dest := library.Path(d.root, d.cfg.OutputTemplate, t, d.cfg.Format)
-	ev.Path = dest
+func (d *downloader) emit(j *trackJob, stage string) {
+	e := j.ev
+	e.Stage = stage
+	d.rep.emit(j.tu, e)
+}
+
+// resolve decides what the track needs: nothing (the file exists), a link to
+// a copy downloaded elsewhere, or a download of the YouTube upload it finds.
+func (d *downloader) resolve(ctx context.Context, j *trackJob) (*trackJob, bool, error) {
+	j.tu = d.rep.ui.track(j.ev.Index, j.ev.Total, j.ev.Track)
+	j.dest = library.Path(d.root, d.cfg.OutputTemplate, j.t, d.cfg.Format)
+	j.ev.Path = j.dest
 	if !d.cfg.Overwrite {
-		if _, err := os.Stat(dest); err == nil {
-			d.remember(ctx, t, dest)
-			ev.Skipped = true
-			emit("done")
-			return nil
+		if _, err := os.Stat(j.dest); err == nil {
+			d.remember(ctx, j.t, j.dest)
+			j.ev.Skipped = true
+			d.emit(j, "done")
+			return j, true, nil
 		}
-		if done, err := d.reuse(ctx, t, dest, &ev); done || err != nil {
-			if err == nil {
-				emit("done")
+	}
+	// Looked up here rather than up front, so an existing file costs no
+	// lookup, and before the duplicate check, which can match on ISRC.
+	if d.dz != nil {
+		if err := d.dz.EnrichTrack(ctx, &j.t); err != nil {
+			if ctx.Err() != nil {
+				return j, false, ctx.Err()
 			}
-			return err
+			slog.WarnContext(ctx, "Deezer lookup failed; ISRC and disc number may be missing", "track", j.ev.Track, "err", err)
+		}
+	}
+	if !d.cfg.Overwrite {
+		if done, err := d.reuse(ctx, j.t, j.dest, &j.ev); done || err != nil {
+			if err == nil {
+				d.emit(j, "done")
+			}
+			return j, done, err
 		}
 	}
 
-	best, _, err := d.yt.Resolve(ctx, t)
+	best, _, err := d.yt.Resolve(ctx, j.t)
 	if err != nil {
-		return err
+		return j, false, err
 	}
-	ev.YouTubeURL = best.URL
-	emit("resolved")
+	j.url = best.URL
+	j.ev.YouTubeURL = best.URL
+	d.emit(j, "resolved")
+	return j, false, nil
+}
 
-	// The work directory sits inside the library so the finished file can be
-	// renamed into place atomically instead of copied across filesystems.
-	if err := os.MkdirAll(d.root, 0o755); err != nil {
-		return err
-	}
-	work, err := os.MkdirTemp(d.root, ".spotify-dl-")
+func (d *downloader) download(ctx context.Context, j *trackJob) (*trackJob, bool, error) {
+	work, err := os.MkdirTemp(d.work, "track-")
 	if err != nil {
-		return err
+		return j, false, err
 	}
-	defer os.RemoveAll(work)
+	j.work = work
+	d.emit(j, "downloading")
+	j.src, err = d.fetch(ctx, j.url, j.work, j.tu, j.ev)
+	return j, false, err
+}
 
-	emit("downloading")
-	src, err := d.fetch(ctx, best.URL, work, tu, ev)
+func (d *downloader) tag(ctx context.Context, j *trackJob) (*trackJob, bool, error) {
+	defer os.RemoveAll(j.work)
+	d.emit(j, "tagging")
+	cover, err := audio.FetchCover(ctx, j.t.CoverURL)
 	if err != nil {
-		return err
+		slog.WarnContext(ctx, "no cover art", "track", j.ev.Track, "err", err)
 	}
-
-	emit("tagging")
-	cover, err := audio.FetchCover(ctx, t.CoverURL)
-	if err != nil {
-		slog.WarnContext(ctx, "no cover art", "track", ev.Track, "err", err)
-	}
-	out := filepath.Join(work, "out."+d.cfg.Format)
+	out := filepath.Join(j.work, "out."+d.cfg.Format)
 	err = audio.Encode(ctx, d.cfg.Tools.FFmpeg, audio.Job{
-		Source: src.Path, SourceCodec: src.Codec, Dest: out,
-		Format: d.cfg.Format, Bitrate: d.cfg.Bitrate, Track: t, Cover: cover,
+		Source: j.src.Path, SourceCodec: j.src.Codec, Dest: out,
+		Format: d.cfg.Format, Bitrate: d.cfg.Bitrate, Track: j.t, Cover: cover,
 	})
 	if err != nil {
-		return err
+		return j, false, err
 	}
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return err
+	if err := os.MkdirAll(filepath.Dir(j.dest), 0o755); err != nil {
+		return j, false, err
 	}
-	if err := os.Rename(out, dest); err != nil {
-		return err
+	if err := os.Rename(out, j.dest); err != nil {
+		return j, false, err
 	}
-
-	d.remember(ctx, t, dest)
-	ev.Warning = audio.QualityWarning(d.cfg.Format, d.cfg.Bitrate, src.Kbps, src.Codec)
-	emit("done")
-	return nil
+	d.remember(ctx, j.t, j.dest)
+	j.ev.Warning = audio.QualityWarning(d.cfg.Format, d.cfg.Bitrate, j.src.Kbps, j.src.Codec)
+	d.emit(j, "done")
+	return j, false, nil
 }
 
 // reuse satisfies t from a file already downloaded under another name (the

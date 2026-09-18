@@ -121,3 +121,41 @@ func TestWebPlaylistProgress(t *testing.T) {
 		t.Errorf("progress %v, want %v", calls, want)
 	}
 }
+
+func TestWebPlaylistParallelKeepsOrder(t *testing.T) {
+	w := newTestWeb(t)
+	w.Workers = 4
+	col, err := w.Resolve(context.Background(), Ref{KindPlaylist, "pl"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, tr := range col.Tracks {
+		ids = append(ids, tr.ID)
+	}
+	if want := []string{"t2", "tx"}; !reflect.DeepEqual(ids, want) {
+		t.Errorf("order %v, want %v", ids, want)
+	}
+}
+
+func TestWebRetriesRateLimit(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			rw.Header().Set("Retry-After", "1")
+			rw.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		body, _ := os.ReadFile(filepath.Join("testdata", "embed_album.html"))
+		rw.Write(body)
+	}))
+	defer srv.Close()
+	tracks, err := NewWeb(srv.URL).Album(context.Background(), "alb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls < 2 || len(tracks) != 2 {
+		t.Errorf("calls=%d tracks=%d", calls, len(tracks))
+	}
+}

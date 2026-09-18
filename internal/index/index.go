@@ -28,7 +28,8 @@ type Entry struct {
 
 // Index is safe for concurrent use.
 type Index struct {
-	path string
+	path   string
+	saveMu sync.Mutex // one Save at a time, so an older snapshot never lands last
 
 	mu     sync.Mutex
 	tracks map[string]Entry  // by key(Spotify track ID, extension)
@@ -145,6 +146,8 @@ func (x *Index) Len() int {
 // Save writes the index atomically, so an interrupted run never leaves a
 // half-written file behind.
 func (x *Index) Save() error {
+	x.saveMu.Lock()
+	defer x.saveMu.Unlock()
 	x.mu.Lock()
 	b, err := json.MarshalIndent(struct {
 		Tracks map[string]Entry `json:"tracks"`
