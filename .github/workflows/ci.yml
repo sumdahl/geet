@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # The release workflow runs these same checks before building.
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13
+      - name: Installer syntax
+        run: sh -n install.sh && sh -n scripts/release-notes.sh
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      # The tag round-trip tests run real ffmpeg; without it they skip.
+      - name: Install ffmpeg
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -yq --no-install-recommends ffmpeg
+      - run: go vet ./...
+      - run: go test -race ./...
+      - name: Smoke-test the binary
+        run: |
+          go build -o geet ./cmd/geet
+          ./geet version
+          ./geet config settings > /dev/null
+          # 1 means "something needs fixing" (yt-dlp isn't installed here);
+          # anything higher is geet itself failing.
+          rc=0; ./geet doctor --offline || rc=$?
+          test "$rc" -le 1
+
+  # What a user runs: the published installer against the latest release,
+  # on a real Linux box and a real Mac.
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the latest release
+        run: GEET_INSTALL_DIR="$RUNNER_TEMP/bin" sh install.sh
+      - run: '"$RUNNER_TEMP/bin/geet" version'

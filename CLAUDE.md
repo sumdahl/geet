@@ -27,7 +27,7 @@ A Go CLI that takes a Spotify track, album or playlist URL, gets its metadata (s
 
 ## Platforms
 
-Linux is the target and macOS is best effort, where everything but `watch` (Wayland `wl-paste`, `notify-send`) should work. The user decided not to pursue other platforms for now: the BSDs and Windows don't compile (`syscall.Statfs` in `internal/doctor`, `syscall.Stat_t` in `internal/index`), and that's accepted. Keep new code building for `GOOS=darwin`.
+Linux is the target and macOS is best effort, where everything but `watch` (Wayland `wl-paste`, `notify-send`) should work. The user decided not to pursue other platforms for now: the BSDs and Windows don't compile (`syscall.Statfs` in `internal/doctor`, `syscall.Stat_t` in `internal/index`), and that's accepted. Keep new code building for `GOOS=darwin`. Releases come only from `.github/workflows/release.yml` (GoReleaser, `.goreleaser.yaml`) on a `v*` tag pushed after CI passes on `main`. The release steps are in the README, under "Continuous integration and releases". Never hand-build a release. Asset names must stay `geet-<os>-<arch>` plus `SHA256SUMS`: `install.sh` (the README's `curl … | sh` one-liner) downloads `geet-<os>-<arch>` and verifies it against `SHA256SUMS`, and v0.2.0 first shipped Linux-only, which gave a Mac user `exec format error`.
 
 ## Architecture rules (non-negotiable)
 
@@ -109,7 +109,8 @@ Linux is the target and macOS is best effort, where everything but `watch` (Wayl
 - Include a tag round-trip test that writes tags and reads them back.
 - Include a pipeline cancellation test that cancels mid-flight and asserts no goroutines leak.
 - Tests must not use the live network: mock the Spotify HTTP client and stub `yt-dlp` JSON output.
-- Commands: `go test -race ./...`, a single test with `go test ./internal/spotify -run TestParseURL`, `go vet ./...`, `gofmt -l .`. Run locally with `go run ./cmd/geet download <url>` (add `-v` for debug logs).
+- CI (`.github/workflows/ci.yml`) runs golangci-lint (`.golangci.yml`), vet and race tests on Linux **and macOS**. It's the only real Mac we have, so keep tests free of GNU-only shell (`sed -i`, `readlink -f`, `stat -c`).
+- Commands: `golangci-lint run`, `go test -race ./...`, a single test with `go test ./internal/spotify -run TestParseURL`, `go vet ./...`, `gofmt -l .`. Run locally with `go run ./cmd/geet download <url>` (add `-v` for debug logs).
 
 ## Repo-local skill
 

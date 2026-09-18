@@ -1,0 +1,60 @@
+# Releases are built by .github/workflows/release.yml when a v* tag is
+# pushed. Try it locally with: goreleaser release --snapshot --clean
+version: 2
+project_name: geet
+
+# Not dist/: that holds hand-made release files from before this config,
+# and --clean would delete them.
+dist: build
+
+builds:
+  - main: ./cmd/geet
+    binary: geet
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Tag }}
+    # Reproducible: the same commit gives byte-identical binaries.
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+# Plain binaries named geet-<os>-<arch>: install.sh and the links in older
+# release notes download exactly these names.
+archives:
+  - formats: [binary]
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: SHA256SUMS
+  algorithm: sha256
+
+# The notes are the version's CHANGELOG.md section, passed with
+# --release-notes by the workflow (scripts/release-notes.sh).
+changelog:
+  disable: true
+
+release:
+  name_template: "geet {{ .Tag }}"
+  # v1.2.0-rc.1 and the like are pre-releases, which "latest" (and so
+  # install.sh) skips.
+  prerelease: auto
+  header: |
+    geet (गीत, "song") downloads Spotify tracks, albums and playlists, and songs found by name, as tagged audio files.
+  footer: |
+    ## Install
+
+    On Linux or macOS:
+
+    ```sh
+    curl -fsSL https://raw.githubusercontent.com/sumdahl/geet/main/install.sh | sh
+    ```
+
+    You also need `yt-dlp` and `ffmpeg` (`sudo pacman -S yt-dlp ffmpeg`, or `brew install yt-dlp ffmpeg` on macOS). To download a binary yourself, pick `geet-<linux|darwin>-<amd64|arm64>` below and check it with `sha256sum -c SHA256SUMS --ignore-missing`. Every binary is attested: `gh attestation verify <file> -R sumdahl/geet` proves this repository's release workflow built it.
+
+    **Full changelog**: https://github.com/sumdahl/geet/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"

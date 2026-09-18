@@ -1,6 +1,7 @@
 # Build output
 /geet
 /dist/
+/build/
 *.exe
 *.test
 

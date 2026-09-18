@@ -31,17 +31,22 @@ playlist "Daily Mix 1": 50 track(s) → /home/you/Music/daily-mix-1
 
 ```sh
 sudo pacman -S yt-dlp ffmpeg wl-clipboard libnotify   # Arch / Omarchy
+brew install yt-dlp ffmpeg                            # macOS
 ```
 
 ## Install
 
-**Download a release binary** (Linux x86-64 or arm64, a static binary that needs nothing but `yt-dlp` and `ffmpeg`) from [Releases](https://github.com/sumdahl/geet/releases):
+**One command, on Linux or macOS:**
 
 ```sh
-curl -L https://github.com/sumdahl/geet/releases/latest/download/geet-linux-amd64 -o ~/.local/bin/geet
-chmod +x ~/.local/bin/geet
-geet doctor         # check that everything geet needs is in place
+curl -fsSL https://raw.githubusercontent.com/sumdahl/geet/main/install.sh | sh
 ```
+
+The [installer](install.sh) picks the binary for your system (Linux or macOS, x86-64 or arm64/Apple Silicon) from the latest [release](https://github.com/sumdahl/geet/releases), checks it against the release's `SHA256SUMS`, and installs it to `~/.local/bin` without sudo. It then says whether that folder is on your `PATH` and whether `yt-dlp` and `ffmpeg` are missing, with the command to install them. Run it again to update. `GEET_VERSION=v0.2.0` pins a release, and `GEET_INSTALL_DIR` picks another folder (put the variable after the pipe: `… | GEET_VERSION=v0.2.0 sh`).
+
+Then run `geet doctor` to check that everything geet needs is in place.
+
+Or download a binary yourself: `geet-linux-amd64`, `geet-linux-arm64`, `geet-darwin-amd64` or `geet-darwin-arm64` from [Releases](https://github.com/sumdahl/geet/releases). Each is a single static file that needs nothing but `yt-dlp` and `ffmpeg`. On macOS, a binary saved from a web browser is quarantined, and macOS won't open it until you run `xattr -d com.apple.quarantine <file>`. `exec format error` means the binary is for another system, such as the Linux one on a Mac.
 
 **Or build from source** (Go 1.27+):
 
@@ -419,6 +424,31 @@ go vet ./... && gofmt -l .
 - Tests never touch the network. Spotify, Deezer and YouTube responses are fixtures under `testdata/`, served by `httptest` or replayed by a fake `yt-dlp` script.
 - **When a real search picks the wrong upload,** capture it (`yt-dlp "ytsearch5:<query>" --flat-playlist --dump-json > internal/youtube/testdata/<name>.ndjson`) and add a case to `TestBestOnRealSearches` before changing any weights.
 - The design docs in [`docs/`](docs/) are the spec and roadmap. The Omarchy plugin comes next.
+- Lint with [golangci-lint](https://golangci-lint.run/) v2 (`golangci-lint run`, configured in `.golangci.yml`).
+
+### Continuous integration and releases
+
+Every push to `main` and every pull request runs [CI](.github/workflows/ci.yml): golangci-lint, then `go vet` and `go test -race` on both Linux and macOS, and a smoke test of the built binary. A separate job runs `install.sh` against the latest release on a real Linux machine and a real Mac.
+
+Releases are built by [GoReleaser](https://goreleaser.com/) in [release.yml](.github/workflows/release.yml), never by hand. To release version 0.3.0:
+
+1. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [0.3.0] - <date>`, start a new empty `## [Unreleased]` above it, and update the compare links at the bottom.
+2. Commit, push to `main`, and wait for CI to pass.
+3. Tag and push the tag:
+   ```sh
+   git tag -a v0.3.0 -m "geet v0.3.0"
+   git push origin v0.3.0
+   ```
+
+The tag starts the release workflow:
+- It runs all of CI again and checks that the tag is on `main`.
+- It builds `geet-{linux,darwin}-{amd64,arm64}` with the version stamped in, plus `SHA256SUMS`.
+- It publishes the GitHub release, with that version's `CHANGELOG.md` section as its notes. A tag without a changelog section fails.
+- It signs [build provenance](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations) for every binary.
+
+The installer and "latest" links then serve the new version. Tags with a suffix, such as `v0.3.0-rc.1`, become pre-releases, which "latest" skips.
+
+To see what a release would build, without publishing anything: `goreleaser release --snapshot --clean`, whose output goes to `build/`.
 
 ## Legal
 

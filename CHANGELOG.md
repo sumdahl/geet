@@ -8,6 +8,16 @@ still change the CLI, the configuration or the `--json` output.
 ## [Unreleased]
 
 ### Added
+- macOS builds (`geet-darwin-amd64`, `geet-darwin-arm64`), and a one-line
+  installer for Linux and macOS:
+  `curl -fsSL https://raw.githubusercontent.com/sumdahl/geet/main/install.sh | sh`.
+  It picks the binary for the system, verifies it against `SHA256SUMS`,
+  installs to `~/.local/bin` without sudo, and says what's missing (`PATH`,
+  yt-dlp, ffmpeg). Before this, the README's download command fetched the
+  Linux binary on a Mac too, which fails with `exec format error`.
+- Releases are built and published by GitHub Actions with GoReleaser, and
+  every binary has signed build provenance (`gh attestation verify <file>
+  -R sumdahl/geet`). CI runs lint and the tests on Linux and macOS.
 - `geet watch`, the clipboard daemon: copy a Spotify track, album or
   playlist link (or several songs at once) and it downloads, one link after
   another. A desktop notification with the cover shows the download start
