@@ -75,7 +75,7 @@ func BotCheckAdvice(cookieSource string, err error) string {
 	var be *botCheckError
 	switch {
 	case cookieSource == "":
-		return msg + "Fix: " + BotCheckFix + " (in ~/.config/geet/config.toml, under [youtube])."
+		return msg + "Fix: " + BotCheckFix + " (in geet's config file: \"geet config path\" shows where)."
 	case errors.As(err, &be) && be.cookieTrouble != "":
 		return msg + "Your cookies (" + cookieSource + ") aren't being sent: " + be.cookieTrouble + `. Run "geet doctor" to check them.`
 	}

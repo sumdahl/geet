@@ -371,7 +371,10 @@ func readLinks(r io.Reader) ([]string, error) {
 // or URIs, Apple Music song links, itunes:<id>), in the given order and
 // without repeats. It's how playlists over Spotify's 100-track public limit
 // are downloaded in full.
-func resolveList(ctx context.Context, cfg config.Config, links []string, report func(step string, done, total int)) ([]spotify.Track, error) {
+// hintFrom, if set, is the playlist or album the links came from: its own
+// page lists the details of up to 100 of them, so those need only their
+// song pages (spotify.Web.Hint).
+func resolveList(ctx context.Context, cfg config.Config, links []string, hintFrom spotify.Ref, report func(step string, done, total int)) ([]spotify.Track, error) {
 	type slot struct{ spotifyID, itunesID, deezerID string }
 	var slots []slot
 	var spotifyIDs []string
@@ -418,6 +421,11 @@ func resolveList(ctx context.Context, cfg config.Config, links []string, report 
 
 	web := newWeb(ctx, cfg, report)
 	defer saveCache(ctx, web)
+	if hintFrom.ID != "" && (hintFrom.Kind == spotify.KindPlaylist || hintFrom.Kind == spotify.KindAlbum) {
+		if _, err := web.Hint(ctx, hintFrom); err != nil {
+			slog.DebugContext(ctx, "reading the listing for hints", "ref", hintFrom, "err", err)
+		}
+	}
 	found, skipped, err := web.Tracks(ctx, spotifyIDs)
 	if err != nil {
 		return nil, err

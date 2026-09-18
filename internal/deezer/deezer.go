@@ -262,11 +262,17 @@ type dzTrack struct {
 	Duration      int    `json:"duration"`
 	TrackPosition int    `json:"track_position"`
 	DiskNumber    int    `json:"disk_number"`
+	Explicit      bool   `json:"explicit_lyrics"`
 }
 
 func (d dzTrack) apply(t *spotify.Track, sameRelease bool) {
 	if d.ISRC != "" {
 		t.ISRC = d.ISRC
+	}
+	// Spotify's listings mark explicit songs; Deezer's flag is a second
+	// opinion, for a song Spotify's metadata left unmarked.
+	if d.Explicit {
+		t.Explicit = true
 	}
 	if sameRelease && d.DiskNumber > 0 && d.TrackPosition > 0 {
 		t.DiscNumber, t.TrackNumber = d.DiskNumber, d.TrackPosition

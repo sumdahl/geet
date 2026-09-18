@@ -7,6 +7,18 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Changed
+- Reading a playlist from Spotify makes about half the requests. A
+  playlist's own page lists each song's artists, length and explicit flag,
+  so its songs are read from their song pages alone (album name and cover
+  are there too), without album pages. `--tracks` with a playlist link does
+  the same for the first 100 songs. Cold reads: a 42-song playlist went
+  from 7.7 s to 5.8 s, the 201-song list from 45.5 s to 36.2 s, with the
+  same metadata except the album artist of compilations and soundtracks,
+  which becomes the song's main artist. Songs with no playlist listing
+  still read their album page, which is where Spotify marks explicit songs.
+- Deezer's explicit flag also marks a song explicit.
+
 ## [0.4.1] - 2026-09-19
 
 ### Added
