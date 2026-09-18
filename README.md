@@ -100,10 +100,10 @@ Spotify's public page lists only a playlist's first 100 songs. geet notices and 
 ```
 warning: Spotify's public page shows only 100 of the 201 songs in this playlist.
 To download all of them: in the Spotify app open the playlist, press Ctrl+A then Ctrl+C, then run:
-  wl-paste | geet download "https://open.spotify.com/playlist/…" --tracks -
+  wl-paste | geet download "https://open.spotify.com/playlist/…" --tracks
 ```
 
-Ctrl+A then Ctrl+C in the Spotify desktop app copies a link for every song, and `--tracks -` reads them from the clipboard. The playlist link only names the folder. Songs already downloaded are skipped, so re-running this after a normal download fetches just the missing ones. `--tracks` also takes a file with one link per line (`#` starts a comment), and it works without a playlist link, saving into `output` directly.
+Ctrl+A then Ctrl+C in the Spotify desktop app copies a link for every song, and `--tracks` reads them from the clipboard. The playlist link only names the folder. Songs already downloaded are skipped, so re-running this after a normal download fetches just the missing ones. `--tracks=FILE` reads a file instead, with one link per line (`#` starts a comment). Either form works without a playlist link, saving into `output` directly.
 
 ### Progress and speed
 

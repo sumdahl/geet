@@ -8,8 +8,8 @@ still change the CLI, the configuration or the `--json` output.
 ## [Unreleased]
 
 ### Added
-- `--tracks <file|->` downloads a list of song links, one per line, for
-  example `wl-paste | geet download <playlist> --tracks -` after selecting
+- `--tracks` (stdin) or `--tracks=FILE` downloads a list of song links, one per line, for
+  example `wl-paste | geet download <playlist> --tracks` after selecting
   every song in Spotify (Ctrl+A, Ctrl+C). This is how playlists over
   Spotify's 100-song public limit are downloaded in full. The playlist link
   names the folder, duplicates in the list are dropped, and `#` lines are

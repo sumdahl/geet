@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -117,7 +118,20 @@ func (r *reporter) fatal(err error) int {
 
 func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	c := newCLI("download", "download [flags] <spotify-url | apple-music-url | itunes:<id>>", stderr)
-	tracksFrom := c.fs.String("tracks", "", "download these song links instead of the link's own list: a file, or - for stdin (e.g. wl-paste | geet download <playlist> --tracks -); for playlists over Spotify's 100-song public limit")
+	// --tracks alone reads the links from stdin; --tracks=FILE reads a file.
+	// A bool-style flag, so the easily forgotten "-" isn't required.
+	tracksFrom := new(string)
+	c.fs.BoolFunc("tracks", "download song links instead of the link's own list, read from stdin (wl-paste | geet download <playlist> --tracks), or --tracks=FILE; for playlists over Spotify's 100-song public limit", func(v string) error {
+		switch v {
+		case "true", "-":
+			*tracksFrom = "-"
+		case "false":
+			*tracksFrom = ""
+		default:
+			*tracksFrom = v
+		}
+		return nil
+	})
 	positional, err := c.parse(args)
 	if errors.Is(err, flag.ErrHelp) {
 		return exitOK
@@ -125,6 +139,9 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	if err != nil {
 		return exitFatal
 	}
+	// "--tracks -" (the form in older messages) parses as the bare flag and
+	// a "-" argument; the "-" means stdin, which the bare flag already does.
+	positional = slices.DeleteFunc(positional, func(a string) bool { return a == "-" && *tracksFrom == "-" })
 	if len(positional) > 1 || (len(positional) == 0 && *tracksFrom == "") {
 		c.fs.Usage()
 		return exitFatal
@@ -170,7 +187,7 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	}
 	if col.Total > len(col.Tracks) {
 		notice := fmt.Sprintf("Spotify's public page shows only %d of the %d songs in this playlist.", len(col.Tracks), col.Total)
-		rep.notice(notice + "\nTo download all of them: in the Spotify app open the playlist, press Ctrl+A then Ctrl+C, then run:\n  wl-paste | geet download \"" + link + "\" --tracks -")
+		rep.notice(notice + "\nTo download all of them: in the Spotify app open the playlist, press Ctrl+A then Ctrl+C, then run:\n  wl-paste | geet download \"" + link + "\" --tracks")
 	}
 	return runDownload(ctx, c, cfg, rep, col, lateTags, stderr)
 }
