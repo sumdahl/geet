@@ -81,3 +81,22 @@ func TestWordMatch(t *testing.T) {
 		}
 	}
 }
+
+func FuzzText(f *testing.F) {
+	for _, s := range []string{"Ni**as In Paris", "JAŸ-Z", "हताररिँदै, बतासिँदै", "🔥🔥", "a\x00b\xff", "*", "**a**", ""} {
+		f.Add(s, "n****s")
+	}
+	f.Fuzz(func(t *testing.T, a, b string) {
+		_ = Norm(a)
+		_ = Base(a)
+		_ = StripVersion(a)
+		for _, w := range Words(a) {
+			if w == "" {
+				t.Fatalf("empty word from %q", a)
+			}
+			for _, v := range Words(b) {
+				_ = WordMatch(w, v)
+			}
+		}
+	})
+}

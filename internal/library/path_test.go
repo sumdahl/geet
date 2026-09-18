@@ -1,8 +1,10 @@
 package library
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/sumdahl/spotify-dl/internal/spotify"
 )
@@ -130,4 +132,39 @@ func TestFolderNameLength(t *testing.T) {
 	if len(got) > maxFolderBytes || strings.HasSuffix(got, "-") || strings.Contains(got, " ") {
 		t.Errorf("got %d bytes: %q", len(got), got)
 	}
+}
+
+// Any metadata, however broken, must yield a path inside root: one file,
+// no traversal, valid UTF-8, within the length limits.
+func FuzzPath(f *testing.F) {
+	for _, s := range []string{"AC/DC", "../../etc", "हताररिँदै, बतासिँदै", "🔥🔥🔥", ".", "..", "a\x00b\xff/\\:*?\"<>|", "   "} {
+		f.Add(s, s)
+	}
+	f.Fuzz(func(t *testing.T, title, artist string) {
+		tr := spotify.Track{Title: title, Artists: []string{artist}, AlbumArtist: artist, Album: title}
+		for _, tmpl := range []string{DefaultTemplate, "{album_artist}/{album}/{track} {title}"} {
+			p := Path("/root", tmpl, tr, "opus")
+			rel, err := filepath.Rel("/root", p)
+			if err != nil || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+				t.Fatalf("path %q escapes root", p)
+			}
+			if got, want := strings.Count(rel, "/"), strings.Count(tmpl, "/"); got != want {
+				t.Fatalf("path %q has %d separators, template %d", p, got, want)
+			}
+			for _, seg := range strings.Split(rel, "/") {
+				if len(seg) > maxSegmentBytes || seg == "" || seg == "." || seg == ".." {
+					t.Fatalf("bad segment %q in %q", seg, p)
+				}
+			}
+			if !strings.HasSuffix(p, ".opus") {
+				t.Fatalf("lost extension: %q", p)
+			}
+		}
+		for _, c := range FolderCases {
+			name := FolderName(title, c)
+			if name == "" || len(name) > maxFolderBytes || strings.ContainsAny(name, " /\\") || !utf8.ValidString(name) {
+				t.Fatalf("FolderName(%q, %s) = %q", title, c, name)
+			}
+		}
+	})
 }

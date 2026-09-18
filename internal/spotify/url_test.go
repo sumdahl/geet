@@ -48,3 +48,15 @@ func TestParseURL(t *testing.T) {
 		})
 	}
 }
+
+func FuzzParseURL(f *testing.F) {
+	for _, s := range []string{"https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC", "spotify:track:x", "https://open.spotify.com/intl-ne/playlist/37i9dQZF1E38GaNXgXwvL4?si=a", "%zz", "\xff"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		ref, err := ParseURL(s)
+		if err == nil && (len(ref.ID) != 22 || (ref.Kind != KindTrack && ref.Kind != KindAlbum && ref.Kind != KindPlaylist)) {
+			t.Fatalf("ParseURL(%q) accepted %+v", s, ref)
+		}
+	})
+}
