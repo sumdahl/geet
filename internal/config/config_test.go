@@ -56,7 +56,9 @@ client_secret = "secret"
 				c.YouTube.MaxDurationDiff = Duration{4 * time.Second}
 				c.YouTube.ExtraArgs = []string{"--geo-bypass"}
 				c.YouTube.CookiesFile = filepath.Join(home, "c.txt")
-				c.Spotify = Spotify{ClientID: "id", ClientSecret: "secret"}
+				// Setting the credentials leaves the rest of [spotify]
+				// (cache_days) at its default.
+				c.Spotify.ClientID, c.Spotify.ClientSecret = "id", "secret"
 			},
 		},
 		{
@@ -82,6 +84,9 @@ client_secret = "secret"
 		{name: "bad search limit", flags: map[string]string{"search.limit": "0"}, wantErr: ErrInvalid},
 		{name: "bad picker", flags: map[string]string{"search.picker": "dmenu"}, wantErr: ErrInvalid},
 		{name: "bad progress", flags: map[string]string{"progress": "sometimes"}, wantErr: ErrInvalid},
+		{name: "cache off", flags: map[string]string{"spotify.cache_days": "0"}, want: func(c *Config) { c.Spotify.CacheDays = 0 }},
+		{name: "negative cache days", flags: map[string]string{"spotify.cache_days": "-1"}, wantErr: ErrInvalid},
+		{name: "cache over a year", flags: map[string]string{"spotify.cache_days": "400"}, wantErr: ErrInvalid},
 		{name: "unknown format", body: "format = \"wav\"\n", wantErr: ErrInvalid},
 		{name: "bad bitrate", flags: map[string]string{"bitrate": "loud"}, wantErr: ErrInvalid},
 		{name: "bad bool from env", env: map[string]string{"GEET_OVERWRITE": "sometimes"}, wantErr: ErrInvalid},

@@ -36,6 +36,7 @@ func (c *Config) Settings() []Setting {
 		{Key: "resolve_jobs", Usage: "songs read from Spotify and looked up on YouTube at once; higher reads big playlists faster but makes Spotify rate-limit sooner", ptr: &c.ResolveJobs},
 		{Key: "spotify.client_id", Usage: "Spotify Web API client ID (optional; needs Premium)", ptr: &c.Spotify.ClientID},
 		{Key: "spotify.client_secret", Usage: "Spotify Web API client secret", Secret: true, ptr: &c.Spotify.ClientSecret},
+		{Key: "spotify.cache_days", Usage: "days to remember songs read from Spotify's public pages, so reading a playlist again skips them; 0 turns the cache off", ptr: &c.Spotify.CacheDays},
 		{Key: "youtube.search_query", Usage: "YouTube search text; placeholders: {artists} {artist} {title} {album}", ptr: &c.YouTube.SearchQuery},
 		{Key: "youtube.fallback_query", Usage: "second search when nothing from search_query matches (same placeholders); empty disables", ptr: &c.YouTube.FallbackQuery},
 		{Key: "youtube.search_results", Usage: "YouTube results to score per track", ptr: &c.YouTube.SearchResults},

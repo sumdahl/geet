@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
+	"golang.org/x/time/rate"
 )
 
 const (
@@ -55,9 +57,16 @@ type Web struct {
 	// answers 429, pausing in between (default 6, about a minute in all).
 	// 1 reports the limit at once, as a health check wants.
 	RateLimitAttempts int
+	// Cache, if set, answers Track from tracks read before, and keeps the
+	// ones read now. The caller saves it.
+	Cache *Cache
 
-	mu     sync.Mutex
-	albums map[string]*webAlbum
+	mu         sync.Mutex
+	albums     map[string]*webAlbum
+	albumFetch singleflight.Group // one fetch per album, however many tracks want it
+	// pace spreads requests out across all workers: Spotify rate-limits
+	// bursts, and a 429 costs every worker a pause of up to 30s.
+	pace *rate.Limiter
 
 	// cooldown is when requests may resume after Spotify answered 429.
 	// Shared by every worker: if each backed off on its own, the others
@@ -87,8 +96,18 @@ func NewWeb(baseURL string) *Web {
 		baseURL: strings.TrimRight(baseURL, "/"),
 		albums:  make(map[string]*webAlbum),
 		backoff: 2 * time.Second,
+		pace:    rate.NewLimiter(requestsPerSecond, requestBurst),
 	}
 }
+
+// requestsPerSecond is below what set off Spotify's rate limit (24 workers,
+// about 20 requests a second, 429 after some 200) and above what the default
+// 8 workers make (about 8 a second at ~1s per page), so it only slows down a
+// raised resolve_jobs. It's an estimate: Spotify doesn't publish the limit.
+const (
+	requestsPerSecond = 10
+	requestBurst      = 10
+)
 
 func (w *Web) Resolve(ctx context.Context, ref Ref) (Collection, error) {
 	switch ref.Kind {
@@ -117,6 +136,19 @@ func (w *Web) Resolve(ctx context.Context, ref Ref) (Collection, error) {
 }
 
 func (w *Web) Track(ctx context.Context, id string) (Track, error) {
+	if w.Cache != nil {
+		if t, ok := w.Cache.get(id); ok {
+			return t, nil
+		}
+	}
+	t, err := w.readTrack(ctx, id)
+	if err == nil && w.Cache != nil {
+		w.Cache.put(t)
+	}
+	return t, err
+}
+
+func (w *Web) readTrack(ctx context.Context, id string) (Track, error) {
 	meta, err := w.trackMeta(ctx, id)
 	if err != nil {
 		return Track{}, fmt.Errorf("fetching track %s: %w", id, err)
@@ -315,20 +347,28 @@ func (w *Web) album(ctx context.Context, id string) (*webAlbum, error) {
 		return alb, nil
 	}
 
-	e, err := w.embed(ctx, KindAlbum, id)
+	// Songs of one album often sit side by side in a playlist, so several
+	// workers ask for it at once; they share a single fetch.
+	v, err, _ := w.albumFetch.Do(id, func() (any, error) {
+		e, err := w.embed(ctx, KindAlbum, id)
+		if err != nil {
+			return nil, err
+		}
+		alb := &webAlbum{
+			name:   e.Name,
+			artist: strings.ReplaceAll(e.Subtitle, embedArtistSep, ", "),
+			cover:  e.cover(),
+			tracks: e.TrackList,
+		}
+		w.mu.Lock()
+		w.albums[id] = alb
+		w.mu.Unlock()
+		return alb, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	alb = &webAlbum{
-		name:   e.Name,
-		artist: strings.ReplaceAll(e.Subtitle, embedArtistSep, ", "),
-		cover:  e.cover(),
-		tracks: e.TrackList,
-	}
-	w.mu.Lock()
-	w.albums[id] = alb
-	w.mu.Unlock()
-	return alb, nil
+	return v.(*webAlbum), nil
 }
 
 type embedItem struct {
@@ -421,6 +461,9 @@ func (w *Web) fetch(ctx context.Context, u, userAgent string) ([]byte, error) {
 	}
 	for attempt := 1; ; attempt++ {
 		if err := w.waitCooldown(ctx); err != nil {
+			return nil, err
+		}
+		if err := w.pace.Wait(ctx); err != nil {
 			return nil, err
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)

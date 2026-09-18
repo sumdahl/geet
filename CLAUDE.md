@@ -17,7 +17,13 @@ The user's Spotify account is free, and the Web API needs Premium, so there are 
 - Both sources return `spotify.Track`.
 - Deezer search is geo-filtered. From Nepal it hides roughly 30% of major-label tracks, even though `/track/isrc:{isrc}` finds them. Missing ISRCs are therefore expected and not a matching bug.
 - Scraped pages break silently when Spotify changes its markup. Parsing failures wrap `spotify.ErrPageFormat`. When one fires, fetch the live page and update both the parser and the fixtures in `internal/spotify/testdata`.
+- `spotify.Web` has three protections against Spotify's rate limit (HTTP 429):
+  - **Metadata cache:** `spotify.Cache` in `~/.cache/geet/spotify.json`, set by `newWeb` in `cmd/geet/main.go`, with a TTL from `spotify.cache_days`. A re-read playlist reads only songs it hasn't seen. `Save` merges with the file on disk, because `watch` and a download may run at once. Bump `cacheVersion` whenever `Track`'s fields change.
+  - **Pacing:** one shared limiter of 10 requests/s (`requestsPerSecond`, an estimate). Tests must use `unpaced(NewWeb(...))` or they crawl; `TestWebPacesRequests` covers the pacing itself.
+  - **One fetch per album:** concurrent workers share it through `singleflight`.
 - Spotify pages and the Deezer API both return absolute `next` URLs, so the test fixtures use a `{{base}}` placeholder that the test server rewrites.
+
+**`main` is protected** by the ruleset "Protect main". Every change goes in through a pull request: branch, push the branch, open a PR, and let auto-merge squash it once the 5 required checks pass (lint, test and install on Ubuntu and macOS). A direct push to `main` is refused (GH013), and the PR must be up to date with `main`. Push with gh's token: `git -c credential.helper='!gh auth git-credential' push https://github.com/sumdahl/geet.git <branch>`.
 
 Work proceeds in the order given in `docs/07-roadmap.md`, and **you must pause for user review after each deliverable**. After deliverable 3 (single-track download, tag and `--json`), stop and let the user use the engine by hand before starting on concurrency or the plugin. Do not build the playerctl v2 feature (`docs/05-future-v2-playerctl.md`) until plugin v1 works.
 

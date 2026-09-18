@@ -7,6 +7,25 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Added
+- Songs read from Spotify's public pages are cached for 30 days in
+  `~/.cache/geet/spotify.json` (`spotify.cache_days`, where 0 turns it off).
+  Reading a playlist again, to pick up new songs or retry skipped ones,
+  reads only the songs not seen before: a 42-song playlist went from 6.2 s
+  to 0.4 s. watch and a download running side by side share the cache
+  safely.
+
+### Changed
+- Requests to Spotify are paced to at most 10 a second across all workers,
+  because bursts are what trigger its rate limit. The default 8 workers
+  stay below that pace, so only a raised `resolve_jobs` is slowed.
+- Songs of the same album share a single album-page fetch, even when
+  several workers want it at the same moment.
+- The README no longer recommends `resolve_jobs = 24`. Measured on a
+  42-song playlist, 24 wasn't faster than the default 8, and reading many
+  Spotify pages at once is what causes rate limits. `resolve_jobs`'s help
+  now says what it controls.
+
 ### Fixed
 - Songs whose official upload names the artist only in a run-together
   channel name, or writes the title with different spacing, no longer fail
@@ -16,12 +35,6 @@ still change the CLI, the configuration or the `--json` output.
   Bada$$ → Badass), matches words split differently ("1Train" / "1 Train"),
   and accepts an artist name of five or more letters at the start of a
   channel name.
-
-### Changed
-- The README no longer recommends `resolve_jobs = 24`. Measured on a
-  42-song playlist, 24 wasn't faster than the default 8, and reading many
-  Spotify pages at once is what causes rate limits. `resolve_jobs`'s help
-  now says what it controls.
 
 ## [0.3.0] - 2026-09-18
 
