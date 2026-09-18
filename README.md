@@ -34,6 +34,16 @@ sudo pacman -S yt-dlp ffmpeg        # Arch / Omarchy
 
 ## Install
 
+**Download a release binary** (Linux x86-64 or arm64, a static binary that needs nothing but `yt-dlp` and `ffmpeg`) from [Releases](https://github.com/sumdahl/geet/releases):
+
+```sh
+curl -L https://github.com/sumdahl/geet/releases/latest/download/geet-linux-amd64 -o ~/.local/bin/geet
+chmod +x ~/.local/bin/geet
+geet doctor         # check that everything geet needs is in place
+```
+
+**Or build from source** (Go 1.27+):
+
 ```sh
 git clone https://github.com/sumdahl/geet
 cd geet
@@ -44,7 +54,7 @@ Or build a binary yourself, with the release version stamped in:
 
 ```sh
 go build -trimpath -ldflags "-s -w -X main.version=$(git describe --tags --always --dirty)" -o ~/.local/bin/geet ./cmd/geet
-geet version        # geet v0.1.0 (80f7f43, 2026-09-18)
+geet version        # geet v0.2.0 (<commit>, <date>)
 ```
 
 Or run it from the source tree without installing: `go run ./cmd/geet download <url>`.
@@ -69,6 +79,8 @@ Accepted links:
 
 Share links from the Spotify app work as copied. Artist links aren't supported.
 
+Put links in quotes: shared links contain `&` (`…?si=…&utm_source=copy_link`), and an unquoted `&` makes the shell run geet in the background, where Ctrl+C can't reach it and the progress display breaks.
+
 Examples:
 
 ```sh
@@ -80,6 +92,25 @@ geet download "<url>" -v                             # debug logs, including eve
 ```
 
 Exit codes: `0` all tracks succeeded, `1` some failed (the others were saved), `2` fatal (bad link, missing tool, interrupted).
+
+### Progress and speed
+
+In a terminal, each song gets an animated bar. Big runs (more than 8 songs) switch to a compact display: bars only for songs being downloaded or tagged, and one summary line for the rest:
+
+```
+[14/49] Olivia Dean - Man I Need          ━━━━━━━━━━━━━━━━──────── ⠋ downloading  65%  2.0 MiB / 3.0 MiB
+[11/49] Ella Langley - Choosin' Texas     ━━━━━━━━━━━━━━━━━━━━━━━━ ⠋ tagging & cover art
+⠙ 14 finding on YouTube · 11 queued · 16 downloading · 2 tagging · 12/49 done
+```
+
+Songs download 4 at a time by default. On a good connection, more is faster: 16 downloads 50 songs in about 40 seconds. Set it once in the config:
+
+```toml
+jobs = 16          # parallel downloads
+resolve_jobs = 24  # parallel metadata reads and YouTube searches (keep it above jobs)
+```
+
+Past your bandwidth, more jobs just split it. If YouTube starts answering "sign in to confirm you're not a bot", lower `jobs`. Interrupting with Ctrl+C is always safe: no partial files are left, and re-running the same command continues where it stopped.
 
 ### Search
 

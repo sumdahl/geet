@@ -7,6 +7,8 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-18
+
 ### Added
 - `geet doctor`: a health check of everything geet depends on. It covers
   yt-dlp (with age), ffmpeg and its encoders, ffprobe, fzf, the config, the
@@ -33,6 +35,8 @@ still change the CLI, the configuration or the `--json` output.
 - After Ctrl+C (or any fatal error) in a terminal, the `geet: interrupted`
   line is printed again. It was written to the progress display after that
   display had shut down, and lost.
+- `geet help` lists `download`'s Apple Music links and `itunes:` refs, and
+  marks `watch` as not built yet.
 
 ## [0.1.0] - 2026-09-18
 
@@ -71,5 +75,6 @@ First release.
   YouTube. Ctrl+C leaves no partial files, and re-running resumes.
 - `geet version` shows the release, commit and date.
 
-[Unreleased]: https://github.com/sumdahl/geet/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/sumdahl/geet/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/sumdahl/geet/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/sumdahl/geet/releases/tag/v0.1.0
