@@ -130,10 +130,11 @@ func searchCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	for i, p := range picked {
 		tracks[i] = results[p].Track
 	}
-	rep.ui = chooseUI(cfg.Progress, stderr, c.json)
+	rep.setUI(chooseUI(cfg.Progress, stderr, c.json))
 	setupLogging(rep.ui.writer(), c.verbose)
 	col := spotify.Collection{Ref: spotify.Ref{Kind: kindSearch}, Name: query, Tracks: tracks}
-	return runDownload(ctx, c, cfg, rep, col, true, stderr)
+	res, err := runDownload(ctx, cfg, rep, col, true)
+	return rep.exit(c, res, err, stderr)
 }
 
 // searchCatalog searches iTunes and returns the best results, ranked and

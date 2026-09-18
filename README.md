@@ -24,12 +24,13 @@ playlist "Daily Mix 1": 50 track(s) → /home/you/Music/daily-mix-1
 
 ## Requirements
 
-- Linux (other Unix-likes probably work too, but only Linux is tested)
+- Linux: supported and tested. macOS: best effort, and everything except `geet watch` (which needs Wayland) should work, but it isn't tested there. Other platforms (BSDs, Windows) aren't supported.
 - Go 1.27+ to build
 - [`yt-dlp`](https://github.com/yt-dlp/yt-dlp), `ffmpeg` and `ffprobe` on `PATH`. The paths are configurable.
+- For `geet watch` only: a Wayland session with `wl-paste` (wl-clipboard), and `notify-send` (libnotify) for notifications.
 
 ```sh
-sudo pacman -S yt-dlp ffmpeg        # Arch / Omarchy
+sudo pacman -S yt-dlp ffmpeg wl-clipboard libnotify   # Arch / Omarchy
 ```
 
 ## Install
@@ -164,6 +165,40 @@ Download 1 song? [Y/n]
   - Apple's public catalog lists some explicit songs only as clean edits, whose titles are censored too ("umean" for Gunna's "fukumean"). These are marked `(clean)`, and matching still finds the right upload.
   - A few labels' catalogs aren't searchable from some regions. For those, use the Spotify link.
 
+### Clipboard daemon
+
+`geet watch` downloads every Spotify link you copy, until you stop it with Ctrl+C:
+
+```
+$ geet watch
+Watching the clipboard: copy a Spotify link to download it. Ctrl+C stops.
+Copied https://open.spotify.com/album/1DFixLWuPkv3KT3TnV35m3
+…
+✓ Emotion (Deluxe): 15 saved → /home/you/Music
+Watching the clipboard.
+```
+
+- Track, album and playlist links all work, as do Apple Music song links. Several songs selected in Spotify and copied together (Ctrl+C) download as one batch.
+- Links download one after another, in the order you copied them. Each still uses the full download pipeline.
+- A desktop notification shows the cover when a download starts, then changes to the result: saved, already in your library, some failed, or failed with the reason. Turn it off with `watch.notify = false`.
+- Whatever was on the clipboard when `watch` started is ignored, so an old link doesn't start a download. Copying the same link again downloads it again, which costs nothing when the files already exist.
+- A failed link only fails that link: the daemon keeps watching. It exits `0` when stopped with Ctrl+C or SIGTERM, and `2` if it can't read the clipboard at all (no `wl-paste`, or no Wayland session).
+- It checks the clipboard every `watch.interval` (1s). Wayland only: X11 clipboards (xclip, xsel) aren't read.
+
+If you'd rather not keep a process running, bind a key to download whatever is on the clipboard. Without a terminal to watch, the `notify-send` calls say how it went. On Omarchy 4, in `~/.config/hypr/bindings.lua` (`SUPER + SHIFT + Y` is Omarchy's YouTube shortcut, so unbind it first or pick another key):
+
+```lua
+hl.unbind("SUPER + SHIFT + Y")
+o.bind("SUPER + SHIFT + Y", "Download copied song",
+  [[geet download "$(wl-paste)" && notify-send geet "Download finished" || notify-send -u critical geet "Download failed"]])
+```
+
+With a classic `hyprland.conf`:
+
+```
+bindd = SUPER SHIFT, Y, Download copied song, exec, geet download "$(wl-paste)" && notify-send geet "Download finished" || notify-send -u critical geet "Download failed"
+```
+
 ### Health check
 
 When downloads start failing, run `geet doctor`. It checks everything geet depends on outside its own code, in about 2 seconds, and says how to fix whatever is broken:
@@ -268,9 +303,13 @@ client_secret = "..."
 | `search.limit` | `--search-limit` | int | `15` | Results offered to pick from |
 | `search.picker` | `--search-picker` | string | `auto` | `auto` (fzf if installed), `fzf` or `list` |
 | `search.confirm` | `--search-confirm` | bool | `true` | Ask before downloading menu picks |
+| `watch.interval` | `--watch-interval` | duration | `1s` | How often `watch` checks the clipboard |
+| `watch.notify` | `--watch-notify` | bool | `true` | Desktop notifications from `watch` |
 | `tools.yt_dlp` | `--tools-yt-dlp` | string | `yt-dlp` | Executables |
 | `tools.ffmpeg` | `--tools-ffmpeg` | string | `ffmpeg` | |
 | `tools.ffprobe` | `--tools-ffprobe` | string | `ffprobe` | |
+| `tools.wl_paste` | `--tools-wl-paste` | string | `wl-paste` | Clipboard reader for `watch` |
+| `tools.notify_send` | `--tools-notify-send` | string | `notify-send` | Notifications for `watch` |
 
 `geet config settings --json` prints this table as JSON (key, flag, env variable, type, default, current value, description), so tools can build a settings UI without hard-coding it.
 
@@ -283,7 +322,17 @@ With `--json`, stdout carries only NDJSON: one event per line, as each track mov
  "youtube_url":"https://www.youtube.com/watch?v=l21wGxlWwPw","path":"/home/you/Music/fukumean - Gunna.opus"}
 ```
 
-`reading` events report progress before any track starts. Repeated `downloading` events carry a `progress` from 0.1 to 1. Tracks run concurrently, so key events by `index`. The full schema and its compatibility rules are in [docs/03-communication-contract.md](docs/03-communication-contract.md).
+`reading` events report progress before any track starts. Repeated `downloading` events carry a `progress` from 0.1 to 1. Tracks run concurrently, so key events by `index`.
+
+`geet watch --json` streams the same events for as long as it runs. Each copied link is announced by a `queued` event and ends with exactly one `finished` event, and all events in between carry its `job` number and `source` link:
+
+```json
+{"track":"","stage":"queued","job":1,"source":"https://open.spotify.com/album/1DFixLWuPkv3KT3TnV35m3"}
+{"track":"","stage":"finished","job":1,"source":"https://open.spotify.com/album/1DFixLWuPkv3KT3TnV35m3",
+ "name":"Emotion (Deluxe)","total":15,"path":"/home/you/Music","counts":{"saved":15,"existing":0,"failed":0}}
+```
+
+The full schema and its compatibility rules are in [docs/03-communication-contract.md](docs/03-communication-contract.md).
 
 ## Architecture
 
@@ -329,7 +378,7 @@ With `--json`, stdout carries only NDJSON: one event per line, as each track mov
 
 | Package | Role |
 |---|---|
-| `cmd/geet` | CLI: subcommands, flags generated from the settings list, the per-track stages (`download.go`), search and the fzf/numbered picker (`search.go`, `pick.go`), the stderr display (`ui.go`) |
+| `cmd/geet` | CLI: subcommands, flags generated from the settings list, the per-track stages (`download.go`), search and the fzf/numbered picker (`search.go`, `pick.go`), the clipboard daemon (`watch.go`), the stderr display (`ui.go`) |
 | `internal/config` | Settings, defined once in `Config.Settings()`. Each becomes a TOML key, a `--flag` and a `GEET_*` variable, and is validated. |
 | `internal/spotify` | Link parsing. `Web` scrapes the public pages (keyless); `API` uses the official Web API. Both return a `Collection`. |
 | `internal/deezer` | Fills in what the public pages lack (ISRC, disc and track numbers) from Deezer's keyless API. Best effort: album match first, then per-track search. |
@@ -340,6 +389,8 @@ With `--json`, stdout carries only NDJSON: one event per line, as each track mov
 | `internal/audio` | One ffmpeg pass: copy or convert, write tags, embed the cover. Also the quality warning. |
 | `internal/library` | Output path from the template, sanitizing, playlist folder names |
 | `internal/index` | Remembers every saved file by Spotify ID and ISRC, so duplicates are linked instead of downloaded. Can rebuild itself from file tags. |
+| `internal/clipboard` | Reads the Wayland clipboard with `wl-paste` and reports changes, for `watch` |
+| `internal/notify` | Desktop notifications through `notify-send`, with markup escaped |
 | `internal/pipeline` | Generic staged worker pools with bounded channels and shared cancellation |
 | `internal/textnorm` | Title and name normalization shared by matching: accent folding, censored-word wildcards, Devanagari-safe |
 
@@ -367,7 +418,7 @@ go vet ./... && gofmt -l .
 
 - Tests never touch the network. Spotify, Deezer and YouTube responses are fixtures under `testdata/`, served by `httptest` or replayed by a fake `yt-dlp` script.
 - **When a real search picks the wrong upload,** capture it (`yt-dlp "ytsearch5:<query>" --flat-playlist --dump-json > internal/youtube/testdata/<name>.ndjson`) and add a case to `TestBestOnRealSearches` before changing any weights.
-- The design docs in [`docs/`](docs/) are the spec and roadmap. Next come the clipboard `watch` daemon and the Omarchy plugin.
+- The design docs in [`docs/`](docs/) are the spec and roadmap. The Omarchy plugin comes next.
 
 ## Legal
 

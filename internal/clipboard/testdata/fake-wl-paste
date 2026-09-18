@@ -1,0 +1,12 @@
+#!/bin/sh
+# Stands in for wl-paste in tests: prints the file FAKE_CLIPBOARD, or says
+# nothing is copied when it doesn't exist. FAKE_WLPASTE_ERROR fails instead.
+if [ -n "$FAKE_WLPASTE_ERROR" ]; then
+	echo "$FAKE_WLPASTE_ERROR" >&2
+	exit 1
+fi
+if [ ! -f "$FAKE_CLIPBOARD" ]; then
+	echo "Nothing is copied" >&2
+	exit 1
+fi
+cat "$FAKE_CLIPBOARD"

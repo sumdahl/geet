@@ -51,7 +51,36 @@ as a stable API even before the plugin exists.
   - `2` — fatal (bad URL, auth failure, yt-dlp/ffmpeg missing)
 - `geet watch --json` (the clipboard daemon) streams the same NDJSON
   shape continuously, one line per event, so a consumer can keep the
-  process open and read a pipe instead of polling.
+  process open and read a pipe instead of polling. Each copied link is a
+  **job**, downloaded one at a time in copy order:
+  - `queued`: a link was copied: `{"stage":"queued","job":1,"source":"<link>"}`.
+    Several song links copied together are one job, with the first as `source`.
+  - Then the usual `reading`/`resolved`/…/`done`/`failed` events of that
+    job, each also carrying its `job` and `source`. `index`/`total` count
+    within the job.
+  - `finished`: exactly one per `queued` job, when it ends:
+    ```json
+    {"track":"","stage":"finished","job":1,"source":"https://open.spotify.com/album/…",
+     "name":"Emotion (Deluxe)","total":15,"path":"/home/u/Music",
+     "counts":{"saved":14,"existing":0,"failed":1}}
+    ```
+    | field | meaning |
+    |---|---|
+    | `name` | the album or playlist name, or "Artists - Title" for one song; empty if the link couldn't be read |
+    | `total` | tracks in the job |
+    | `path` | the folder the files went to |
+    | `counts` | `saved` (downloaded), `existing` (already in the library, including reused duplicates), `failed` |
+    | `error` | the job as a whole failed: an unreadable link, `interrupted` (the daemon was stopped mid-job), or the queue was full. `counts` still says what finished before. |
+
+    A failed job never stops the daemon, and never sets `fatal`.
+  - `fatal: true` appears only if the daemon itself can't go on (no
+    `wl-paste`, no Wayland session, `yt-dlp`/`ffmpeg` missing at start),
+    with exit code 2. Stopped by SIGINT/SIGTERM, it exits 0 after a
+    `finished` event (`"error":"interrupted"`) for any job in progress.
+    Jobs still queued then get no `finished`: the process exit ends them.
+  - With `watch.notify` (default on) the daemon also shows desktop
+    notifications. A consumer that shows its own should pass
+    `--watch-notify=false`.
 
 ## Configuration for consumers
 The plugin configures the engine without touching its internals:

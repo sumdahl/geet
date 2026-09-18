@@ -49,6 +49,7 @@ type Config struct {
 	Spotify            Spotify `toml:"spotify" json:"spotify"`
 	YouTube            YouTube `toml:"youtube" json:"youtube"`
 	Search             Search  `toml:"search" json:"search"`
+	Watch              Watch   `toml:"watch" json:"watch"`
 	Tools              Tools   `toml:"tools" json:"tools"`
 }
 
@@ -78,10 +79,18 @@ type Search struct {
 	Confirm bool   `toml:"confirm" json:"confirm"`
 }
 
+// Watch configures `geet watch`, the clipboard daemon.
+type Watch struct {
+	Interval Duration `toml:"interval" json:"interval"`
+	Notify   bool     `toml:"notify" json:"notify"`
+}
+
 type Tools struct {
-	YtDlp   string `toml:"yt_dlp" json:"yt_dlp"`
-	FFmpeg  string `toml:"ffmpeg" json:"ffmpeg"`
-	FFprobe string `toml:"ffprobe" json:"ffprobe"`
+	YtDlp      string `toml:"yt_dlp" json:"yt_dlp"`
+	FFmpeg     string `toml:"ffmpeg" json:"ffmpeg"`
+	FFprobe    string `toml:"ffprobe" json:"ffprobe"`
+	WlPaste    string `toml:"wl_paste" json:"wl_paste"`
+	NotifySend string `toml:"notify_send" json:"notify_send"`
 }
 
 // Duration reads and writes as a Go duration string ("10s") in both TOML and
@@ -119,7 +128,8 @@ func Default() Config {
 			ExtraArgs:       []string{},
 		},
 		Search: Search{Country: "US", Limit: 15, Picker: "auto", Confirm: true},
-		Tools:  Tools{YtDlp: "yt-dlp", FFmpeg: "ffmpeg", FFprobe: "ffprobe"},
+		Watch:  Watch{Interval: Duration{time.Second}, Notify: true},
+		Tools:  Tools{YtDlp: "yt-dlp", FFmpeg: "ffmpeg", FFprobe: "ffprobe", WlPaste: "wl-paste", NotifySend: "notify-send"},
 	}
 }
 
@@ -169,7 +179,7 @@ func Load(path string, flags map[string]string) (Config, error) {
 			return Config{}, err
 		}
 	}
-	for _, p := range []*string{&cfg.Output, &cfg.IndexPath, &cfg.YouTube.CookiesFile, &cfg.Tools.YtDlp, &cfg.Tools.FFmpeg, &cfg.Tools.FFprobe} {
+	for _, p := range []*string{&cfg.Output, &cfg.IndexPath, &cfg.YouTube.CookiesFile, &cfg.Tools.YtDlp, &cfg.Tools.FFmpeg, &cfg.Tools.FFprobe, &cfg.Tools.WlPaste, &cfg.Tools.NotifySend} {
 		if *p, err = ExpandHome(*p); err != nil {
 			return Config{}, err
 		}
@@ -243,8 +253,11 @@ func (c Config) Validate() error {
 	if !slices.Contains(pickers, c.Search.Picker) {
 		errs = append(errs, fmt.Errorf("search.picker %q must be one of %s", c.Search.Picker, strings.Join(pickers, ", ")))
 	}
-	if c.Tools.YtDlp == "" || c.Tools.FFmpeg == "" || c.Tools.FFprobe == "" {
-		errs = append(errs, errors.New("tools.yt_dlp, tools.ffmpeg and tools.ffprobe must not be empty"))
+	if c.Watch.Interval.Duration < 100*time.Millisecond || c.Watch.Interval.Duration > time.Minute {
+		errs = append(errs, fmt.Errorf("watch.interval must be between 100ms and 1m, got %s", c.Watch.Interval))
+	}
+	if c.Tools.YtDlp == "" || c.Tools.FFmpeg == "" || c.Tools.FFprobe == "" || c.Tools.WlPaste == "" || c.Tools.NotifySend == "" {
+		errs = append(errs, errors.New("tools.yt_dlp, tools.ffmpeg, tools.ffprobe, tools.wl_paste and tools.notify_send must not be empty"))
 	}
 	if len(errs) > 0 {
 		return fmt.Errorf("%w: %w", ErrInvalid, errors.Join(errs...))

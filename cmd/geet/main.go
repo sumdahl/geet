@@ -47,7 +47,7 @@ commands:
   download <link>          download a Spotify track, album or playlist
                            (also Apple Music song links and itunes:<id>)
   search <words…>          find a song by name, pick it from a menu, download it
-  watch                    watch the clipboard for Spotify links (not built yet)
+  watch                    download each Spotify link you copy, until stopped
   doctor                   check tools, setup and services, and how to fix problems
   config                   show the effective configuration
   config path              print the config file location
@@ -81,8 +81,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "config":
 		return configCmd(args[1:], stdout, stderr)
 	case "watch":
-		fmt.Fprintln(stderr, "geet: watch is not implemented yet")
-		return exitFatal
+		return watchCmd(ctx, args[1:], stdout, stderr)
 	case "version", "--version", "-v":
 		fmt.Fprintln(stdout, versionString())
 		return exitOK

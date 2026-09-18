@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-Deliverables 1–4 are done. `download` runs end to end (match, download, convert, tag, embed cover) as a concurrent three-stage pipeline (docs/02, "As built"). `watch` is a stub, and deliverable 5 (the clipboard daemon) is next. The docs in `docs/` are the spec, so read the relevant one before implementing a component. `docs/00-overview.md` indexes them.
+Deliverables 1–5 are done. `download` runs end to end (match, download, convert, tag, embed cover) as a concurrent three-stage pipeline (docs/02, "As built"), and `watch` runs it for each copied link (docs/01 CLI, "As built"). Deliverable 6 (the Omarchy plugin) is next. Publishing research (AUR, Homebrew, GoReleaser) is in `docs/research/publishing-brew-aur.md`. The docs in `docs/` are the spec, so read the relevant one before implementing a component. `docs/00-overview.md` indexes them.
 
 ## Metadata sources
 
@@ -24,6 +24,10 @@ Work proceeds in the order given in `docs/07-roadmap.md`, and **you must pause f
 ## What this is
 
 A Go CLI that takes a Spotify track, album or playlist URL, gets its metadata (see below), finds the matching audio on YouTube, downloads it with `yt-dlp`, transcodes it with `ffmpeg`, then tags and saves it. It behaves like spotdl but is a native binary.
+
+## Platforms
+
+Linux is the target and macOS is best effort, where everything but `watch` (Wayland `wl-paste`, `notify-send`) should work. The user decided not to pursue other platforms for now: the BSDs and Windows don't compile (`syscall.Statfs` in `internal/doctor`, `syscall.Stat_t` in `internal/index`), and that's accepted. Keep new code building for `GOOS=darwin`.
 
 ## Architecture rules (non-negotiable)
 
@@ -70,6 +74,12 @@ A Go CLI that takes a Spotify track, album or playlist URL, gets its metadata (s
   - `"downloaded"` is a UI-only stage (not in the NDJSON), so a track waiting for a tag worker stops counting as downloading.
   - Never call into a `*mpb.Bar` while holding `barTrack.mu`: the render goroutine takes that lock in `status`.
   - To test the animation headlessly, the pty needs a size: `script -qefc "stty cols 150 rows 40; <cmd>" /dev/null`. With 0 rows mpb draws nothing.
+- `cmd/geet/watch.go`, `internal/clipboard`, `internal/notify`: `geet watch`.
+  - Jobs (one per copied link) run one at a time on the main goroutine; the clipboard goroutine only queues them. It logs through `rep.ui`, so swap the display with `reporter.setUI` (under `rep.mu`), never by assigning `rep.ui`.
+  - Every queued job gets exactly one `finished` event, even when dropped or interrupted. The plugin relies on that pairing.
+  - `runDownload` returns an `outcome` and an error; only `download`/`search` turn those into exit codes (`reporter.exit`), since `watch` must survive a failed link.
+  - `clipboard.capped` must not embed `bytes.Buffer`: its promoted `ReadFrom` lets `io.Copy` skip the size cap.
+  - Omarchy's `SUPER + SHIFT + Y` is its YouTube webapp, so the documented keybind unbinds it first.
 - `cmd/geet`: the subcommands `download <url>` and `watch`. `watch` is a daemon that polls `wl-paste` (Wayland, not xclip) about once a second and sends a `notify-send` notification with the cover art. Flags: `--format --output --bitrate --jobs --resolve-jobs --json`.
 
 ## Playlist pipeline (implemented in `internal/pipeline` and `cmd/geet/download.go`)

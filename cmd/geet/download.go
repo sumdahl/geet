@@ -49,6 +49,19 @@ type event struct {
 	// this file already had it; Linked tells a hard link from a copy.
 	DuplicateOf string `json:"duplicate_of,omitempty"`
 	Linked      bool   `json:"linked,omitempty"`
+	// geet watch only: which copied link an event belongs to. Job numbers
+	// the links in the order they were copied; Source is the link (the first
+	// one when several songs were copied together).
+	Job    int     `json:"job,omitempty"`
+	Source string  `json:"source,omitempty"`
+	Name   string  `json:"name,omitempty"`   // "finished": the album, playlist or song
+	Counts *counts `json:"counts,omitempty"` // "finished": how the link's tracks ended
+}
+
+type counts struct {
+	Saved    int `json:"saved"`    // downloaded
+	Existing int `json:"existing"` // already in the library (the file, or a duplicate reused)
+	Failed   int `json:"failed"`
 }
 
 // reporter sends each event to the NDJSON stream (when --json) and to the
@@ -60,15 +73,26 @@ type reporter struct {
 	mu     sync.Mutex
 	json   *json.Encoder
 	warned map[string]bool
+	job    int // geet watch: the link being downloaded, stamped on its events
+	source string
+}
+
+// write sends e to the NDJSON stream, if any. The caller holds r.mu.
+func (r *reporter) write(e event) {
+	if r.json == nil {
+		return
+	}
+	if e.Job == 0 {
+		e.Job, e.Source = r.job, r.source
+	}
+	if err := r.json.Encode(e); err != nil {
+		slog.Error("writing progress", "err", err)
+	}
 }
 
 func (r *reporter) emit(tu trackUI, e event) {
 	r.mu.Lock()
-	if r.json != nil {
-		if err := r.json.Encode(e); err != nil {
-			slog.Error("writing progress", "err", err)
-		}
-	}
+	r.write(e)
 	// Every track carries its warning in the NDJSON, but a human needs to
 	// read the same one only once per run.
 	warn := e.Warning != "" && !r.warned[e.Warning]
@@ -87,9 +111,7 @@ func (r *reporter) emit(tu trackUI, e event) {
 // "warning" line for humans and a "reading" event with a warning in NDJSON.
 func (r *reporter) notice(msg string) {
 	r.mu.Lock()
-	if r.json != nil {
-		r.json.Encode(event{Stage: "reading", Warning: msg})
-	}
+	r.write(event{Stage: "reading", Warning: msg})
 	r.mu.Unlock()
 	r.ui.log("%s", r.ui.highlight("warning: "+msg))
 }
@@ -98,17 +120,36 @@ func (r *reporter) notice(msg string) {
 func (r *reporter) reading(step string, done, total int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.json != nil {
-		r.json.Encode(event{Stage: "reading", Step: step, Index: done, Total: total})
+	r.write(event{Stage: "reading", Step: step, Index: done, Total: total})
+}
+
+// setUI switches the display. watch swaps it per link while its clipboard
+// goroutine may be logging, hence the lock.
+func (r *reporter) setUI(u ui) {
+	r.mu.Lock()
+	r.ui = u
+	r.mu.Unlock()
+}
+
+// exit ends a download command: fatal on err, otherwise the exit code for
+// how the tracks went.
+func (r *reporter) exit(c *cli, res outcome, err error, stderr io.Writer) int {
+	if err != nil {
+		return r.fatal(err)
 	}
+	r.ui.close(false)
+	setupLogging(stderr, c.verbose)
+	if res.failed > 0 {
+		fmt.Fprintf(stderr, "%d of %d track(s) failed\n", res.failed, res.total())
+		return exitPartial
+	}
+	return exitOK
 }
 
 func (r *reporter) fatal(err error) int {
 	r.ui.close(true)
 	r.mu.Lock()
-	if r.json != nil {
-		r.json.Encode(event{Stage: "failed", Error: err.Error(), Fatal: true})
-	}
+	r.write(event{Stage: "failed", Error: err.Error(), Fatal: true})
 	r.mu.Unlock()
 	// Not r.ui.writer(): once the progress display is shut down, writes to
 	// it are dropped, and the one line saying why geet stopped was lost.
@@ -159,37 +200,42 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		return downloadList(ctx, c, cfg, rep, link, *tracksFrom, stderr)
 	}
 
-	if itunes.IsRef(link) {
-		col, err := lookupITunes(ctx, cfg, link)
-		if err != nil {
-			return rep.fatal(err)
-		}
-		rep.ui = chooseUI(cfg.Progress, stderr, c.json)
-		setupLogging(rep.ui.writer(), c.verbose)
-		return runDownload(ctx, c, cfg, rep, col, true, stderr)
-	}
-
-	ref, err := spotify.ParseURL(link)
+	rep.setUI(chooseUI(cfg.Progress, stderr, c.json))
+	setupLogging(rep.ui.writer(), c.verbose)
+	col, lateTags, err := readLink(ctx, cfg, rep, link)
 	if err != nil {
 		return rep.fatal(err)
 	}
-	rep.ui = chooseUI(cfg.Progress, stderr, c.json)
-	setupLogging(rep.ui.writer(), c.verbose)
+	res, err := runDownload(ctx, cfg, rep, col, lateTags)
+	return rep.exit(c, res, err, stderr)
+}
 
+// readLink reads the tracks behind one link: a Spotify track, album or
+// playlist, or an Apple Music song (link or itunes:<id>). lateTags is as for
+// resolveMetadata.
+func readLink(ctx context.Context, cfg config.Config, rep *reporter, link string) (col spotify.Collection, lateTags bool, err error) {
+	if itunes.IsRef(link) {
+		col, err := lookupITunes(ctx, cfg, link)
+		return col, true, err
+	}
+	ref, err := spotify.ParseURL(link)
+	if err != nil {
+		return spotify.Collection{}, false, err
+	}
 	steps := newSteps(rep, fmt.Sprintf("Reading %s from Spotify", ref.Kind))
 	if ref.Kind != spotify.KindPlaylist {
 		steps.show("spotify")
 	}
-	col, lateTags, err := resolveMetadata(ctx, cfg, ref, steps.report)
+	col, lateTags, err = resolveMetadata(ctx, cfg, ref, steps.report)
 	steps.finish()
 	if err != nil {
-		return rep.fatal(err)
+		return spotify.Collection{}, false, err
 	}
 	if col.Total > len(col.Tracks) {
 		notice := fmt.Sprintf("Spotify's public page shows only %d of the %d songs in this playlist.", len(col.Tracks), col.Total)
 		rep.notice(notice + "\nTo download all of them: in the Spotify app open the playlist, press Ctrl+A then Ctrl+C, then run:\n  wl-paste | geet download \"" + link + "\" --tracks")
 	}
-	return runDownload(ctx, c, cfg, rep, col, lateTags, stderr)
+	return col, lateTags, nil
 }
 
 // downloadList downloads the song links read from `from` (a file, or - for
@@ -234,15 +280,21 @@ func downloadList(ctx context.Context, c *cli, cfg config.Config, rep *reporter,
 		col.Ref, col.Name = ref, name
 	}
 
-	rep.ui = chooseUI(cfg.Progress, stderr, c.json)
+	rep.setUI(chooseUI(cfg.Progress, stderr, c.json))
 	setupLogging(rep.ui.writer(), c.verbose)
-	steps := newSteps(rep, fmt.Sprintf("Reading %d songs from Spotify", len(links)))
-	col.Tracks, err = resolveList(ctx, cfg, links, steps.report)
-	steps.finish()
+	col.Tracks, err = readList(ctx, cfg, rep, links)
 	if err != nil {
 		return rep.fatal(err)
 	}
-	return runDownload(ctx, c, cfg, rep, col, true, stderr)
+	res, err := runDownload(ctx, cfg, rep, col, true)
+	return rep.exit(c, res, err, stderr)
+}
+
+// readList reads the tracks behind a list of song links, showing progress.
+func readList(ctx context.Context, cfg config.Config, rep *reporter, links []string) ([]spotify.Track, error) {
+	steps := newSteps(rep, fmt.Sprintf("Reading %d songs from Spotify", len(links)))
+	defer steps.finish()
+	return resolveList(ctx, cfg, links, steps.report)
 }
 
 // kindList labels a collection read from --tracks without a playlist link:
@@ -325,15 +377,29 @@ func lookupITunes(ctx context.Context, cfg config.Config, link string) (spotify.
 	return spotify.Collection{Ref: spotify.Ref{Kind: spotify.KindTrack, ID: t.ID}, Name: t.Title, Tracks: []spotify.Track{t}}, nil
 }
 
+// outcome is how a run's tracks ended.
+type outcome struct {
+	root     string // where the files went: output, or the playlist's folder
+	saved    int    // downloaded
+	existing int    // already in the library: the file existed, or a duplicate was reused
+	failed   int
+}
+
+func (o outcome) total() int { return o.saved + o.existing + o.failed }
+
+var errInterrupted = errors.New("interrupted")
+
 // runDownload takes a resolved collection through the pipeline into the
-// library and reports the outcome as an exit code. lateTags means ISRC and
-// disc numbers are still to be looked up per track (see resolveMetadata).
-func runDownload(ctx context.Context, c *cli, cfg config.Config, rep *reporter, col spotify.Collection, lateTags bool, stderr io.Writer) int {
+// library. An error means the whole run stopped; failed tracks only count in
+// the outcome. lateTags means ISRC and disc numbers are still to be looked
+// up per track (see resolveMetadata).
+func runDownload(ctx context.Context, cfg config.Config, rep *reporter, col spotify.Collection, lateTags bool) (outcome, error) {
+	var res outcome
 	// "auto" and a missing keyring are resolved here, once, for every yt-dlp
 	// run that follows (see ytdlp.CookieSource).
 	src, err := ytdlp.CookieSource(cfg.YouTube.CookiesFromBrowser, ytdlp.SystemProbes())
 	if err != nil {
-		return rep.fatal(fmt.Errorf("youtube.cookies_from_browser: %w", err))
+		return res, fmt.Errorf("youtube.cookies_from_browser: %w", err)
 	}
 	if src != cfg.YouTube.CookiesFromBrowser {
 		slog.DebugContext(ctx, "cookies", "from", src)
@@ -345,11 +411,12 @@ func runDownload(ctx context.Context, c *cli, cfg config.Config, rep *reporter, 
 	if ref.Kind == spotify.KindPlaylist && cfg.PlaylistFolder {
 		root = filepath.Join(cfg.Output, library.FolderName(col.Name, cfg.PlaylistFolderCase))
 	}
+	res.root = root
 	rep.ui.log("%s %q: %d track(s) → %s", ref.Kind, col.Name, len(tracks), root)
 
 	idx, err := openIndex(ctx, cfg, rep)
 	if err != nil {
-		return rep.fatal(err)
+		return res, err
 	}
 	d := newDownloader(cfg, root, rep, idx)
 	if lateTags {
@@ -359,10 +426,10 @@ func runDownload(ctx context.Context, c *cli, cfg config.Config, rep *reporter, 
 	// files rename into place atomically and one RemoveAll cleans up even
 	// after Ctrl+C.
 	if err := os.MkdirAll(root, 0o755); err != nil {
-		return rep.fatal(err)
+		return res, err
 	}
 	if d.work, err = os.MkdirTemp(root, ".geet-"); err != nil {
-		return rep.fatal(err)
+		return res, err
 	}
 	defer os.RemoveAll(d.work)
 
@@ -370,7 +437,6 @@ func runDownload(ctx context.Context, c *cli, cfg config.Config, rep *reporter, 
 	for i, t := range tracks {
 		jobs[i] = &trackJob{t: t, ev: event{Track: trackName(t), SpotifyID: t.ID, Index: i + 1, Total: len(tracks)}}
 	}
-	failed := 0
 	botChecked := false
 	err = pipeline.Run(ctx, jobs, []pipeline.Stage[*trackJob]{
 		{Name: "resolve", Workers: cfg.ResolveJobs, Do: d.resolve},
@@ -378,9 +444,14 @@ func runDownload(ctx context.Context, c *cli, cfg config.Config, rep *reporter, 
 		{Name: "tag", Workers: tagWorkers, Do: d.tag},
 	}, isFatal, func(j *trackJob, err error) {
 		if err == nil {
+			if j.ev.Skipped || j.ev.DuplicateOf != "" {
+				res.existing++
+			} else {
+				res.saved++
+			}
 			return
 		}
-		failed++
+		res.failed++
 		j.ev.Error = err.Error()
 		d.emit(j, "failed")
 		// Every blocked track fails the same way; say how to fix it once.
@@ -389,20 +460,10 @@ func runDownload(ctx context.Context, c *cli, cfg config.Config, rep *reporter, 
 			rep.notice(ytdlp.BotCheckAdvice(cfg.YouTube.CookiesFromBrowser, err))
 		}
 	})
-	switch {
-	case ctx.Err() != nil:
-		return rep.fatal(errors.New("interrupted"))
-	case err != nil:
-		return rep.fatal(err)
+	if ctx.Err() != nil {
+		return res, errInterrupted
 	}
-
-	rep.ui.close(false)
-	setupLogging(stderr, c.verbose)
-	if failed > 0 {
-		fmt.Fprintf(stderr, "%d of %d track(s) failed\n", failed, len(tracks))
-		return exitPartial
-	}
-	return exitOK
+	return res, err
 }
 
 // tagWorkers is fixed: tagging is a short ffmpeg run and never the

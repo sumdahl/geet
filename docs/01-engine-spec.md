@@ -129,7 +129,20 @@ available three ways, in increasing precedence:
 - `geet download <spotify-url>` — one-shot.
 - `geet watch` — daemon: polls `wl-paste` (Wayland — not xclip/xsel)
   every ~1s, detects a new Spotify URL, downloads automatically, fires
-  `notify-send` with cover art on completion/failure.
+  `notify-send` with cover art on completion/failure. As built:
+  - The clipboard at startup is the baseline and never downloaded; a job
+    starts only when the text changes to something containing links.
+  - Each album/playlist link is a job; song links copied together (Spotify
+    Ctrl+C) are one job. Jobs run one at a time in copy order through the
+    normal pipeline (queue of 32; overflow gets a `finished` with an
+    error). A failed job never stops the daemon.
+  - One notification per job: "Downloading" with the cover (cached under
+    `$XDG_CACHE_HOME/geet/covers`), replaced in place (`notify-send -r`)
+    by the result. Body text is markup-escaped (`& < >`): the Omarchy
+    shell's notification server advertises `body-markup`.
+  - Settings: `watch.interval` (1s), `watch.notify` (true),
+    `tools.wl_paste`, `tools.notify_send`. NDJSON: `queued`/`finished`
+    stages, `job`/`source` on every event (docs/03).
 - `geet config [--json]` — effective config (secrets redacted);
   `config path [--json]`; `config settings [--json]` — every setting with
   flag, env name, type, default, current value and help, for building a

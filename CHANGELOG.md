@@ -8,6 +8,14 @@ still change the CLI, the configuration or the `--json` output.
 ## [Unreleased]
 
 ### Added
+- `geet watch`, the clipboard daemon: copy a Spotify track, album or
+  playlist link (or several songs at once) and it downloads, one link after
+  another. A desktop notification with the cover shows the download start
+  and changes to the result. A failed link doesn't stop it. New settings:
+  `watch.interval`, `watch.notify`, `tools.wl_paste`, `tools.notify_send`.
+- `watch --json` adds `queued` and `finished` events (one each per copied
+  link, with `counts` of saved, existing and failed tracks), and a `job`
+  and `source` on every event, so a consumer can tell links apart.
 - `--tracks` (stdin) or `--tracks=FILE` downloads a list of song links, one per line, for
   example `wl-paste | geet download <playlist> --tracks` after selecting
   every song in Spotify (Ctrl+A, Ctrl+C). This is how playlists over
