@@ -28,6 +28,8 @@ func (c *Config) Settings() []Setting {
 		{Key: "format", Usage: "audio format: opus, flac or mp3", ptr: &c.Format},
 		{Key: "bitrate", Usage: `audio bitrate such as 320k; empty means best available`, ptr: &c.Bitrate},
 		{Key: "overwrite", Usage: "re-download tracks whose file already exists instead of skipping them", ptr: &c.Overwrite},
+		{Key: "duplicates", Usage: "a track already downloaded elsewhere (another playlist, or the same recording on another release): link (hard link, no extra space), copy, skip, or download again", ptr: &c.Duplicates},
+		{Key: "index_path", Usage: "file remembering every downloaded track, for duplicates (default $XDG_DATA_HOME/spotify-dl/index.json)", ptr: &c.IndexPath},
 		{Key: "progress", Usage: "animated progress bars: auto (only in a terminal, and not with --json), always or never", ptr: &c.Progress},
 		{Key: "download_retries", Usage: "extra attempts when a YouTube download fails (it is often a temporary 403 or throttling)", ptr: &c.DownloadRetries},
 		{Key: "jobs", Usage: "concurrent downloads", ptr: &c.Jobs},
@@ -42,6 +44,7 @@ func (c *Config) Settings() []Setting {
 		{Key: "youtube.extra_args", Usage: "extra yt-dlp arguments, space-separated", ptr: &c.YouTube.ExtraArgs},
 		{Key: "tools.yt_dlp", Usage: "yt-dlp executable", ptr: &c.Tools.YtDlp},
 		{Key: "tools.ffmpeg", Usage: "ffmpeg executable", ptr: &c.Tools.FFmpeg},
+		{Key: "tools.ffprobe", Usage: "ffprobe executable, used to index a library downloaded before the index existed", ptr: &c.Tools.FFprobe},
 	}
 }
 

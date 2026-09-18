@@ -18,6 +18,7 @@ import (
 	"github.com/sumdahl/spotify-dl/internal/audio"
 	"github.com/sumdahl/spotify-dl/internal/config"
 	"github.com/sumdahl/spotify-dl/internal/download"
+	"github.com/sumdahl/spotify-dl/internal/index"
 	"github.com/sumdahl/spotify-dl/internal/library"
 	"github.com/sumdahl/spotify-dl/internal/spotify"
 	"github.com/sumdahl/spotify-dl/internal/youtube"
@@ -40,6 +41,10 @@ type event struct {
 	Skipped    bool    `json:"skipped,omitempty"` // done without downloading: the file already existed
 	Warning    string  `json:"warning,omitempty"`
 	Progress   float64 `json:"progress,omitempty"` // repeated "downloading" events: 0.1 … 1.0
+	// DuplicateOf is set on "done" when the track wasn't downloaded because
+	// this file already had it; Linked tells a hard link from a copy.
+	DuplicateOf string `json:"duplicate_of,omitempty"`
+	Linked      bool   `json:"linked,omitempty"`
 }
 
 // reporter sends each event to the NDJSON stream (when --json) and to the
@@ -168,7 +173,11 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	}
 	rep.ui.log("%s %q: %d track(s) → %s", ref.Kind, col.Name, len(tracks), root)
 
-	d := newDownloader(cfg, root, rep)
+	idx, err := openIndex(ctx, cfg, rep)
+	if err != nil {
+		return rep.fatal(err)
+	}
+	d := newDownloader(cfg, root, rep, idx)
 	failed := 0
 	for i, t := range tracks {
 		err := d.track(ctx, t, i+1, len(tracks))
@@ -195,12 +204,13 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 type downloader struct {
 	cfg  config.Config
 	root string // output, or the playlist's folder inside it
+	idx  *index.Index
 	yt   *youtube.Resolver
 	ytd  ytdlp.Runner
 	rep  *reporter
 }
 
-func newDownloader(cfg config.Config, root string, rep *reporter) *downloader {
+func newDownloader(cfg config.Config, root string, rep *reporter, idx *index.Index) *downloader {
 	ytd := ytdlp.Runner{
 		Binary:             cfg.Tools.YtDlp,
 		CookiesFile:        cfg.YouTube.CookiesFile,
@@ -210,6 +220,7 @@ func newDownloader(cfg config.Config, root string, rep *reporter) *downloader {
 	return &downloader{
 		cfg:  cfg,
 		root: root,
+		idx:  idx,
 		ytd:  ytd,
 		rep:  rep,
 		yt: youtube.New(youtube.Options{
@@ -242,9 +253,16 @@ func (d *downloader) track(ctx context.Context, t spotify.Track, index, total in
 	ev.Path = dest
 	if !d.cfg.Overwrite {
 		if _, err := os.Stat(dest); err == nil {
+			d.remember(ctx, t, dest)
 			ev.Skipped = true
 			emit("done")
 			return nil
+		}
+		if done, err := d.reuse(ctx, t, dest, &ev); done || err != nil {
+			if err == nil {
+				emit("done")
+			}
+			return err
 		}
 	}
 
@@ -292,9 +310,78 @@ func (d *downloader) track(ctx context.Context, t spotify.Track, index, total in
 		return err
 	}
 
+	d.remember(ctx, t, dest)
 	ev.Warning = audio.QualityWarning(d.cfg.Format, d.cfg.Bitrate, src.Kbps, src.Codec)
 	emit("done")
 	return nil
+}
+
+// reuse satisfies t from a file already downloaded under another name (the
+// same song in another playlist, or the same recording on another release)
+// per the duplicates setting. done is false when t must be downloaded.
+func (d *downloader) reuse(ctx context.Context, t spotify.Track, dest string, ev *event) (done bool, err error) {
+	if d.cfg.Duplicates == "download" {
+		return false, nil
+	}
+	src, ok := d.idx.Lookup(t.ID, t.ISRC, d.cfg.Format)
+	if !ok || src == dest {
+		return false, nil
+	}
+	ev.DuplicateOf = src
+	if d.cfg.Duplicates == "skip" {
+		ev.Skipped = true
+		return true, nil
+	}
+	linked, err := index.Place(src, dest, d.cfg.Duplicates == "copy")
+	if err != nil {
+		return false, fmt.Errorf("reusing %s: %w", src, err)
+	}
+	ev.Linked = linked
+	d.remember(ctx, t, dest)
+	return true, nil
+}
+
+// remember records dest in the index and saves it right away, so an
+// interrupted run keeps what it did.
+func (d *downloader) remember(ctx context.Context, t spotify.Track, dest string) {
+	d.idx.Add(t.ID, t.ISRC, dest)
+	if err := d.idx.Save(); err != nil {
+		slog.WarnContext(ctx, "saving the download index", "err", err)
+	}
+}
+
+// openIndex loads the download index. The first time (no index yet) it
+// builds one from the existing library, so songs downloaded before the index
+// existed aren't downloaded again; that needs ffprobe, and without it the
+// index just starts empty.
+func openIndex(ctx context.Context, cfg config.Config, rep *reporter) (*index.Index, error) {
+	idx, fresh, err := index.Open(cfg.IndexPath)
+	if err != nil {
+		return nil, err
+	}
+	if !fresh {
+		return idx, nil
+	}
+	if _, err := exec.LookPath(cfg.Tools.FFprobe); err != nil {
+		slog.WarnContext(ctx, "ffprobe not found; not indexing existing downloads", "tools.ffprobe", cfg.Tools.FFprobe)
+		return idx, nil
+	}
+	ph := rep.ui.phase("Indexing your existing downloads (first run only)")
+	err = idx.Scan(ctx, cfg.Tools.FFprobe, cfg.Output, func(done, total int) {
+		ph.set(done, total)
+		rep.reading("index", done, total)
+	})
+	ph.finish()
+	if err != nil {
+		return nil, err
+	}
+	if err := idx.Save(); err != nil {
+		return nil, err
+	}
+	if n := idx.Len(); n > 0 {
+		rep.ui.log("Indexed %d existing download(s) in %s", n, cfg.Output)
+	}
+	return idx, nil
 }
 
 // fetch downloads with retries: YouTube fails downloads now and then (a 403,

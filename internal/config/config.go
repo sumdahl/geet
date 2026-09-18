@@ -17,6 +17,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/sumdahl/spotify-dl/internal/index"
 	"github.com/sumdahl/spotify-dl/internal/library"
 )
 
@@ -24,6 +25,7 @@ var ErrInvalid = errors.New("invalid config")
 
 var (
 	formats         = []string{"opus", "flac", "mp3"}
+	duplicateModes  = []string{"link", "copy", "skip", "download"}
 	progressAnswers = []string{"auto", "always", "never"}
 	bitrate         = regexp.MustCompile(`^[1-9][0-9]*k$`)
 )
@@ -36,6 +38,8 @@ type Config struct {
 	Format             string  `toml:"format" json:"format"`
 	Bitrate            string  `toml:"bitrate" json:"bitrate"`
 	Overwrite          bool    `toml:"overwrite" json:"overwrite"`
+	Duplicates         string  `toml:"duplicates" json:"duplicates"`
+	IndexPath          string  `toml:"index_path" json:"index_path"`
 	Progress           string  `toml:"progress" json:"progress"`
 	DownloadRetries    int     `toml:"download_retries" json:"download_retries"`
 	Jobs               int     `toml:"jobs" json:"jobs"`
@@ -62,8 +66,9 @@ type YouTube struct {
 }
 
 type Tools struct {
-	YtDlp  string `toml:"yt_dlp" json:"yt_dlp"`
-	FFmpeg string `toml:"ffmpeg" json:"ffmpeg"`
+	YtDlp   string `toml:"yt_dlp" json:"yt_dlp"`
+	FFmpeg  string `toml:"ffmpeg" json:"ffmpeg"`
+	FFprobe string `toml:"ffprobe" json:"ffprobe"`
 }
 
 // Duration reads and writes as a Go duration string ("10s") in both TOML and
@@ -89,6 +94,7 @@ func Default() Config {
 		PlaylistFolderCase: "lower",
 		Format:             "opus",
 		Progress:           "auto",
+		Duplicates:         "link",
 		DownloadRetries:    2,
 		Jobs:               4,
 		ResolveJobs:        8,
@@ -98,7 +104,7 @@ func Default() Config {
 			MaxDurationDiff: Duration{10 * time.Second},
 			ExtraArgs:       []string{},
 		},
-		Tools: Tools{YtDlp: "yt-dlp", FFmpeg: "ffmpeg"},
+		Tools: Tools{YtDlp: "yt-dlp", FFmpeg: "ffmpeg", FFprobe: "ffprobe"},
 	}
 }
 
@@ -143,7 +149,12 @@ func Load(path string, flags map[string]string) (Config, error) {
 		}
 	}
 
-	for _, p := range []*string{&cfg.Output, &cfg.YouTube.CookiesFile, &cfg.Tools.YtDlp, &cfg.Tools.FFmpeg} {
+	if cfg.IndexPath == "" {
+		if cfg.IndexPath, err = index.DefaultPath(); err != nil {
+			return Config{}, err
+		}
+	}
+	for _, p := range []*string{&cfg.Output, &cfg.IndexPath, &cfg.YouTube.CookiesFile, &cfg.Tools.YtDlp, &cfg.Tools.FFmpeg, &cfg.Tools.FFprobe} {
 		if *p, err = ExpandHome(*p); err != nil {
 			return Config{}, err
 		}
@@ -175,6 +186,9 @@ func (c Config) Validate() error {
 	if !slices.Contains(formats, c.Format) {
 		errs = append(errs, fmt.Errorf("format %q must be one of %s", c.Format, strings.Join(formats, ", ")))
 	}
+	if !slices.Contains(duplicateModes, c.Duplicates) {
+		errs = append(errs, fmt.Errorf("duplicates %q must be one of %s", c.Duplicates, strings.Join(duplicateModes, ", ")))
+	}
 	if !slices.Contains(progressAnswers, c.Progress) {
 		errs = append(errs, fmt.Errorf("progress %q must be one of %s", c.Progress, strings.Join(progressAnswers, ", ")))
 	}
@@ -202,8 +216,8 @@ func (c Config) Validate() error {
 	if c.YouTube.CookiesFile != "" && c.YouTube.CookiesFromBrowser != "" {
 		errs = append(errs, errors.New("set youtube.cookies_file or youtube.cookies_from_browser, not both"))
 	}
-	if c.Tools.YtDlp == "" || c.Tools.FFmpeg == "" {
-		errs = append(errs, errors.New("tools.yt_dlp and tools.ffmpeg must not be empty"))
+	if c.Tools.YtDlp == "" || c.Tools.FFmpeg == "" || c.Tools.FFprobe == "" {
+		errs = append(errs, errors.New("tools.yt_dlp, tools.ffmpeg and tools.ffprobe must not be empty"))
 	}
 	if len(errs) > 0 {
 		return fmt.Errorf("%w: %w", ErrInvalid, errors.Join(errs...))

@@ -67,6 +67,18 @@ One ffmpeg pass per track: convert, tag, embed cover.
   and renamed into place, so a finished file appears atomically and Ctrl+C
   leaves nothing behind. Existing files are skipped unless `overwrite`.
 
+## Duplicates (`internal/index`)
+- `$XDG_DATA_HOME/spotify-dl/index.json` (`index_path`) maps Spotify track
+  ID + format → file, plus ISRC → track, updated and saved after every
+  track. A track already downloaded elsewhere (another playlist; or the
+  same ISRC under another ID, e.g. album vs single) is not downloaded again;
+  `duplicates` decides: `link` (default: hard link — no extra space, falls
+  back to a copy across filesystems), `copy`, `skip`, or `download`.
+- Only the same format counts (an mp3 request never reuses an opus).
+  Entries whose file was deleted are dropped and the track downloads again.
+- First run with no index: every audio file under `output` is read with
+  ffprobe; files spotify-dl tagged (comment = Spotify track URL) are indexed.
+
 ## Output path (`internal/library`)
 - `output` (default `~/Music`) + `output_template` (default
   `{title} - {artists}`, flat in `output`, e.g. `fukumean - Gunna.opus`) +

@@ -43,6 +43,8 @@ A Go CLI that takes a Spotify track, album or playlist URL, gets its metadata (s
   - `testdata/fake-yt-dlp` stands in for the binary in tests.
 - `internal/library`: output path = `output` (plus `FolderName(playlist)` for playlists) + `output_template` + extension. Each template segment is exactly one path component, sanitized.
 - Resolving a link returns a `spotify.Collection` (ref, name, tracks). The name is what the playlist folder is named after.
+- `internal/index`: the download index, which stops the same song being downloaded twice (hard link, copy or skip, per `duplicates`).
+  - It relies on the comment tag holding the Spotify track URL, which `internal/audio` writes. The first-run `Scan` finds old downloads that way, so never drop that tag.
 - `internal/textnorm`: shared title/name normalization. It keeps Unicode marks so Devanagari words don't split apart.
 - `internal/ytdlp`: the shared yt-dlp runner (cookies and extra args), used by both search and download.
 - `internal/download`: fetches the raw best audio only. It deliberately avoids `--extract-audio`, which ignores the requested bitrate when the codecs match.

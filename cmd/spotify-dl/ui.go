@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -86,9 +87,16 @@ func (t plainTrack) stage(e event) {
 	case "resolved":
 		t.u.log("       match  %s", e.YouTubeURL)
 	case "done":
-		if e.Skipped {
+		switch {
+		case e.DuplicateOf != "" && e.Skipped:
+			t.u.log("       have   %s (not added here: duplicates = skip)", e.DuplicateOf)
+		case e.DuplicateOf != "" && e.Linked:
+			t.u.log("       linked %s (same file as %s)", e.Path, e.DuplicateOf)
+		case e.DuplicateOf != "":
+			t.u.log("       copied %s (from %s)", e.Path, e.DuplicateOf)
+		case e.Skipped:
 			t.u.log("       exists %s", e.Path)
-		} else {
+		default:
 			t.u.log("       saved  %s", e.Path)
 		}
 	case "failed":
@@ -242,9 +250,17 @@ func (t *barTrack) stage(e event) {
 	case "tagging":
 		t.bar.SetCurrent(barDownEnd)
 	case "done":
-		if e.Skipped {
+		from := filepath.Base(filepath.Dir(e.DuplicateOf))
+		switch {
+		case e.DuplicateOf != "" && e.Skipped:
+			t.ui.log("%s %s", t.label, t.ui.paint("2", "• already have it in "+from))
+		case e.DuplicateOf != "" && e.Linked:
+			t.ui.log("%s %s", t.label, t.ui.paint("36", "⧉ linked from "+from+" (no download)"))
+		case e.DuplicateOf != "":
+			t.ui.log("%s %s", t.label, t.ui.paint("36", "⧉ copied from "+from+" (no download)"))
+		case e.Skipped:
 			t.ui.log("%s %s", t.label, t.ui.paint("2", "• already downloaded"))
-		} else {
+		default:
 			t.ui.log("%s %s", t.label, t.ui.paint("32", "✓ saved"))
 		}
 		t.bar.SetTotal(barTotal, true)

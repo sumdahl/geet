@@ -22,8 +22,10 @@ func TestLoad(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
 	defaults := Default()
 	defaults.Output = filepath.Join(home, "Music")
+	defaults.IndexPath = filepath.Join(home, "data", "spotify-dl", "index.json")
 
 	tests := []struct {
 		name    string
@@ -75,6 +77,7 @@ client_secret = "secret"
 		{name: "half the credentials", body: "[spotify]\nclient_id = \"id\"\n", wantErr: ErrInvalid},
 		{name: "bad folder case", flags: map[string]string{"playlist_folder_case": "UPPER"}, wantErr: ErrInvalid},
 		{name: "too many retries", flags: map[string]string{"download_retries": "50"}, wantErr: ErrInvalid},
+		{name: "bad duplicates mode", flags: map[string]string{"duplicates": "hardlink"}, wantErr: ErrInvalid},
 		{name: "bad progress", flags: map[string]string{"progress": "sometimes"}, wantErr: ErrInvalid},
 		{name: "unknown format", body: "format = \"wav\"\n", wantErr: ErrInvalid},
 		{name: "bad bitrate", flags: map[string]string{"bitrate": "loud"}, wantErr: ErrInvalid},
@@ -118,6 +121,7 @@ func TestLoadMissingFileUsesDefaults(t *testing.T) {
 	}
 	want := Default()
 	want.Output = filepath.Join(home, "Music")
+	want.IndexPath = got.IndexPath
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v, want %+v", got, want)
 	}
