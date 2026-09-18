@@ -5,33 +5,117 @@ package textnorm
 import (
 	"strings"
 	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 )
 
-// Norm lowercases s and turns punctuation into single spaces. Marks are kept
-// as word characters: Devanagari vowel signs are marks, and dropping them
-// would split every Nepali or Hindi word apart.
+// Norm lowercases s, folds accents off Latin letters ("JAŸ-Z" → "jay z",
+// "Beyoncé" → "beyonce") and turns punctuation into single spaces.
 func Norm(s string) string {
-	s = strings.Map(func(r rune) rune {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsMark(r) {
-			return unicode.ToLower(r)
-		}
-		return ' '
-	}, s)
-	return strings.Join(strings.Fields(s), " ")
+	return strings.Join(words(s, false), " ")
+}
+
+func Tokens(s string) []string {
+	return words(s, false)
+}
+
+// Words is Tokens, except that an asterisk inside a word is kept as a
+// wildcard: Spotify censors titles ("Ni**as In Paris") while uploads spell
+// them out or censor differently. Compare the results with WordMatch.
+func Words(s string) []string {
+	return words(s, true)
 }
 
 // Base drops a version suffix such as " - Remastered 2009", "(feat. X)" or
 // "[Live]" and normalizes what's left.
 func Base(s string) string {
+	return Norm(StripVersion(s))
+}
+
+// StripVersion cuts s before a "(", "[" or " - " suffix, leaving the title
+// itself; s is returned unchanged if the cut would leave nothing.
+func StripVersion(s string) string {
 	if i := strings.IndexAny(s, "(["); i > 0 {
 		s = s[:i]
 	}
 	if i := strings.Index(s, " - "); i > 0 {
 		s = s[:i]
 	}
-	return Norm(s)
+	return s
 }
 
-func Tokens(s string) []string {
-	return strings.Fields(Norm(s))
+// WordMatch reports whether two words from Words are equal, treating "*" in
+// either as any run of letters: "ni**as" matches "niggas" and "n****s".
+func WordMatch(a, b string) bool {
+	if a == b {
+		return true
+	}
+	if strings.Contains(a, "*") && glob(a, b) {
+		return true
+	}
+	return strings.Contains(b, "*") && glob(b, a)
+}
+
+// glob matches s against pattern, where each run of "*" matches any
+// (possibly empty) run of characters. A pattern of only asterisks matches
+// nothing: it carries no information.
+func glob(pattern, s string) bool {
+	parts := strings.FieldsFunc(pattern, func(r rune) bool { return r == '*' })
+	if len(parts) == 0 {
+		return false
+	}
+	if !strings.HasPrefix(pattern, "*") {
+		if !strings.HasPrefix(s, parts[0]) {
+			return false
+		}
+		s = s[len(parts[0]):]
+		parts = parts[1:]
+	}
+	for i, p := range parts {
+		if i == len(parts)-1 && !strings.HasSuffix(pattern, "*") {
+			return strings.HasSuffix(s, p)
+		}
+		j := strings.Index(s, p)
+		if j < 0 {
+			return false
+		}
+		s = s[j+len(p):]
+	}
+	return true
+}
+
+func words(s string, keepStars bool) []string {
+	var out []string
+	var w strings.Builder
+	flush := func() {
+		word := w.String()
+		w.Reset()
+		if word != "" {
+			out = append(out, word)
+		}
+	}
+	// NFD splits "ÿ" into "y" plus a combining mark. Marks after a Latin
+	// letter are accents and get dropped; every other mark is kept, because
+	// Devanagari vowel signs are marks too and dropping those would split
+	// every Nepali or Hindi word apart.
+	prevLatin := false
+	for _, r := range norm.NFD.String(s) {
+		switch {
+		case unicode.IsMark(r):
+			if !prevLatin {
+				w.WriteRune(r)
+			}
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			w.WriteRune(unicode.ToLower(r))
+			prevLatin = unicode.Is(unicode.Latin, r)
+		case keepStars && r == '*' && w.Len() > 0:
+			w.WriteRune(r)
+			prevLatin = false
+		default:
+			flush()
+			prevLatin = false
+		}
+	}
+	flush()
+	return out
 }

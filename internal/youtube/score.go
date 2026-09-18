@@ -62,7 +62,7 @@ func score(t spotify.Track, c Candidate, rank, n int, maxDiff time.Duration) Sco
 	}
 
 	ytTitle := textnorm.Tokens(c.Title)
-	coverage := tokenCoverage(titleTokens(t.Title), ytTitle)
+	coverage := tokenCoverage(titleWords(t.Title), textnorm.Words(c.Title))
 	if coverage < minTitleCoverage {
 		return reject("title matches %.0f%%", coverage*100)
 	}
@@ -110,22 +110,25 @@ func score(t spotify.Track, c Candidate, rank, n int, maxDiff time.Duration) Sco
 	return s
 }
 
-// titleTokens are the words that identify the song: the base title without a
+// titleWords are the words that identify the song: the base title without a
 // "(feat. X)" or " - Remastered" suffix, which uploads often leave out.
-func titleTokens(title string) []string {
-	if b := strings.Fields(textnorm.Base(title)); len(b) > 0 {
+// Censored words keep their asterisks as wildcards.
+func titleWords(title string) []string {
+	if b := textnorm.Words(textnorm.StripVersion(title)); len(b) > 0 {
 		return b
 	}
-	return textnorm.Tokens(title)
+	return textnorm.Words(title)
 }
 
+// tokenCoverage is the share of want found in have, comparing with
+// textnorm.WordMatch so "ni**as" finds "niggas".
 func tokenCoverage(want, have []string) float64 {
 	if len(want) == 0 {
 		return 0
 	}
 	hit := 0
 	for _, w := range want {
-		if slices.Contains(have, w) {
+		if slices.ContainsFunc(have, func(h string) bool { return textnorm.WordMatch(w, h) }) {
 			hit++
 		}
 	}

@@ -63,6 +63,15 @@ func TestBestOnRealSearches(t *testing.T) {
 			track:   spotify.Track{Title: "Hataarindai, Bataasindai (feat. Shyam Nepali)", Artists: []string{"Sajjan Raj Vaidya", "Shyam Nepali"}, Duration: 330 * time.Second},
 			want:    "alb0nHpuPfE",
 		},
+		{
+			// Spotify censors the title and spells the artist "JAŸ-Z"; the
+			// official upload is 33s too long and #5 is a remix, leaving the
+			// spelled-out fan upload of the right length.
+			name:    "censored title and accented artist",
+			fixture: "niggas_in_paris.ndjson",
+			track:   spotify.Track{Title: "Ni**as In Paris", Artists: []string{"JAŸ-Z", "Kanye West"}, Duration: 219 * time.Second},
+			want:    "fbFnF-86eYs",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
