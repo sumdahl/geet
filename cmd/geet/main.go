@@ -40,9 +40,10 @@ var version = ""
 const usage = `usage: geet <command> [flags]
 
 commands:
-  download <spotify-url>   download a track, album or playlist
+  download <link>          download a Spotify track, album or playlist
+                           (also Apple Music song links and itunes:<id>)
   search <words…>          find a song by name, pick it from a menu, download it
-  watch                    watch the clipboard for Spotify URLs
+  watch                    watch the clipboard for Spotify links (not built yet)
   config                   show the effective configuration
   config path              print the config file location
   config settings          list every setting with its flag and env variable
