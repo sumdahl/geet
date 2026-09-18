@@ -53,7 +53,8 @@ type event struct {
 // reporter sends each event to the NDJSON stream (when --json) and to the
 // human display. Safe for concurrent use.
 type reporter struct {
-	ui ui
+	ui     ui
+	stderr io.Writer // the terminal itself, still there after ui closes
 
 	mu     sync.Mutex
 	json   *json.Encoder
@@ -97,7 +98,9 @@ func (r *reporter) fatal(err error) int {
 		r.json.Encode(event{Stage: "failed", Error: err.Error(), Fatal: true})
 	}
 	r.mu.Unlock()
-	fmt.Fprintf(r.ui.writer(), "geet: %v\n", err)
+	// Not r.ui.writer(): once the progress display is shut down, writes to
+	// it are dropped, and the one line saying why geet stopped was lost.
+	fmt.Fprintf(r.stderr, "geet: %v\n", err)
 	return exitFatal
 }
 
@@ -175,7 +178,7 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 // The reporter prints plainly until the caller switches to the configured
 // display, so config errors come out readable either way.
 func prepare(c *cli, stdout, stderr io.Writer) (*reporter, config.Config, error) {
-	rep := &reporter{ui: &plainUI{w: stderr}, warned: map[string]bool{}}
+	rep := &reporter{ui: &plainUI{w: stderr}, stderr: stderr, warned: map[string]bool{}}
 	if c.json {
 		rep.json = newJSONEncoder(stdout)
 	}
