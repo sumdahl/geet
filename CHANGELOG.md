@@ -17,10 +17,19 @@ still change the CLI, the configuration or the `--json` output.
 - A playlist larger than its public page is detected ("100 of the 201
   songs"), with the exact command to get the rest.
 
+- `youtube.cookies_from_browser = "auto"` uses the default browser's YouTube
+  sign-in. For Chromium-based browsers the keyring is added automatically
+  (`brave+gnomekeyring` on Omarchy), whether the browser is named or
+  detected. Without it, yt-dlp decrypts no cookies outside GNOME or KDE and
+  silently sends none. `geet doctor` shows the resolved value and checks that
+  the cookies decrypt.
+
 ### Changed
-- YouTube's "confirm you're not a bot" block gets one short message with
-  the fix (`youtube.cookies_from_browser`), and those downloads aren't
-  retried, since retrying only prolongs the block.
+- YouTube's "confirm you're not a bot" block gives each affected track a
+  short ✗ line, and the run explains the fix once, depending on the cookie
+  setup: turn cookies on, fix a keyring that can't decrypt them, or sign in
+  to YouTube in that browser. Those downloads aren't retried, since retrying
+  only prolongs the block.
 - `geet doctor` checks that YouTube serves audio, not only search results,
   because the bot check blocks downloads while search keeps working.
 - Warnings print as plain `warning: …` lines instead of timestamped log

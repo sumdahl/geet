@@ -307,6 +307,16 @@ func lookupITunes(ctx context.Context, cfg config.Config, link string) (spotify.
 // library and reports the outcome as an exit code. lateTags means ISRC and
 // disc numbers are still to be looked up per track (see resolveMetadata).
 func runDownload(ctx context.Context, c *cli, cfg config.Config, rep *reporter, col spotify.Collection, lateTags bool, stderr io.Writer) int {
+	// "auto" and a missing keyring are resolved here, once, for every yt-dlp
+	// run that follows (see ytdlp.CookieSource).
+	src, err := ytdlp.CookieSource(cfg.YouTube.CookiesFromBrowser, ytdlp.SystemProbes())
+	if err != nil {
+		return rep.fatal(fmt.Errorf("youtube.cookies_from_browser: %w", err))
+	}
+	if src != cfg.YouTube.CookiesFromBrowser {
+		slog.DebugContext(ctx, "cookies", "from", src)
+	}
+	cfg.YouTube.CookiesFromBrowser = src
 	ref := col.Ref
 	tracks := col.Tracks
 	root := cfg.Output
@@ -339,15 +349,22 @@ func runDownload(ctx context.Context, c *cli, cfg config.Config, rep *reporter, 
 		jobs[i] = &trackJob{t: t, ev: event{Track: trackName(t), SpotifyID: t.ID, Index: i + 1, Total: len(tracks)}}
 	}
 	failed := 0
+	botChecked := false
 	err = pipeline.Run(ctx, jobs, []pipeline.Stage[*trackJob]{
 		{Name: "resolve", Workers: cfg.ResolveJobs, Do: d.resolve},
 		{Name: "download", Workers: cfg.Jobs, Do: d.download},
 		{Name: "tag", Workers: tagWorkers, Do: d.tag},
 	}, isFatal, func(j *trackJob, err error) {
-		if err != nil {
-			failed++
-			j.ev.Error = err.Error()
-			d.emit(j, "failed")
+		if err == nil {
+			return
+		}
+		failed++
+		j.ev.Error = err.Error()
+		d.emit(j, "failed")
+		// Every blocked track fails the same way; say how to fix it once.
+		if errors.Is(err, ytdlp.ErrBotCheck) && !botChecked {
+			botChecked = true
+			rep.notice(ytdlp.BotCheckAdvice(cfg.YouTube.CookiesFromBrowser, err))
 		}
 	})
 	switch {

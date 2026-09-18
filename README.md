@@ -124,14 +124,16 @@ resolve_jobs = 24  # parallel metadata reads and YouTube searches (keep it above
 
 Past your bandwidth, more jobs just split it.
 
-**"YouTube wants a sign-in to confirm you're not a bot"** means YouTube is limiting your IP, usually after many downloads in a short time. Waiting an hour and lowering `jobs` helps. The lasting fix is to let yt-dlp use your browser's YouTube login:
+**"YouTube wants you to confirm you're not a bot"** means YouTube is limiting your IP, usually after many downloads in a short time. geet shows the fix once and doesn't retry those songs, since retrying only prolongs the block. Waiting an hour and lowering `jobs` usually clears it. The lasting fix is to send your browser's YouTube sign-in:
 
 ```toml
 [youtube]
-cookies_from_browser = "chromium"   # or firefox, brave, …: one where you're signed in to YouTube
+cookies_from_browser = "auto"   # your default browser; or name one: brave, chromium, chrome, firefox, vivaldi, edge, opera
 ```
 
-`geet doctor` detects this, because it checks that audio downloads work, not just search. Interrupting with Ctrl+C is always safe: no partial files are left, and re-running the same command continues where it stopped.
+- `auto` finds your default browser. For Chromium-based browsers geet also adds the keyring that holds the cookie key (`brave+gnomekeyring` on Omarchy). Without it, yt-dlp can't decrypt any cookies outside GNOME or KDE and silently sends none.
+- It's off by default: with cookies, YouTube sees the downloads as your account's, and heavy downloading could get that account flagged.
+- `geet doctor` shows what `auto` resolved to and checks that the cookies decrypt. It also checks that audio downloads work, not just search, because the block allows search. Interrupting with Ctrl+C is always safe: no partial files are left, and re-running the same command continues where it stopped.
 
 ### Search
 
@@ -260,7 +262,7 @@ client_secret = "..."
 | `youtube.search_results` | `--youtube-search-results` | int | `5` | Results scored per search |
 | `youtube.max_duration_diff` | `--youtube-max-duration-diff` | duration | `10s` | Reject uploads whose length differs more than this |
 | `youtube.cookies_file` | `--youtube-cookies-file` | string | | Netscape cookies file for yt-dlp |
-| `youtube.cookies_from_browser` | `--youtube-cookies-from-browser` | string | | Browser yt-dlp reads cookies from |
+| `youtube.cookies_from_browser` | `--youtube-cookies-from-browser` | string | *(off)* | Send your YouTube sign-in to get past the bot check: `auto` (default browser) or a browser name; the keyring is added automatically |
 | `youtube.extra_args` | `--youtube-extra-args` | list | | Extra yt-dlp arguments, space-separated |
 | `search.country` | `--search-country` | string | `US` | iTunes store `geet search` looks in |
 | `search.limit` | `--search-limit` | int | `15` | Results offered to pick from |

@@ -51,6 +51,8 @@ A Go CLI that takes a Spotify track, album or playlist URL, gets its metadata (s
   - Raw iTunes order is unusable: covers come before originals, and each album edition repeats. `Rank` merges editions and uses the edition count as popularity.
   - Search downloads carry the Apple Music URL in the comment tag, and the index maps it to `itunes:<id>`.
   - Fixtures in `internal/itunes/testdata` are real catalog responses.
+- `internal/ytdlp/cookies.go`: `ytdlp.CookieSource` resolves `youtube.cookies_from_browser` ("auto" means the default browser via xdg-settings, and the Chromium keyring comes from `<browser>-flags.conf` `--password-store`, else from the running keyring service).
+  - Without the `+keyring` suffix, yt-dlp decrypts nothing on Hyprland and only warns about it. A bot-check error carries that warning (`CookieTrouble`) so the advice can name the real cause.
 - `internal/doctor` and `cmd/geet/doctor.go`: `geet doctor`.
   - Parsing and verdicts (yt-dlp age, ffmpeg encoders, error to fix) are pure functions, and tests use fake tool scripts.
   - The service checks make real requests to known-stable public items (a CC-licensed Spotify track, an iTunes ID). Keep them to one small request each.

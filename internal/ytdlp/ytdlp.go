@@ -18,11 +18,38 @@ var (
 	// ErrBotCheck is YouTube refusing this IP until it proves it's human
 	// ("Sign in to confirm you're not a bot"). Unlike a stray 403 it doesn't
 	// pass by retrying: retries only prolong it.
-	ErrBotCheck = errors.New("YouTube wants a sign-in to confirm you're not a bot")
+	ErrBotCheck = errors.New("YouTube wants you to confirm you're not a bot")
 )
 
-// BotCheckFix is how to get past ErrBotCheck.
-const BotCheckFix = `set youtube.cookies_from_browser to a browser where you're signed in to YouTube (e.g. "chromium" or "firefox"), or wait an hour and lower jobs`
+// BotCheckFix is how to get past ErrBotCheck without cookies configured.
+const BotCheckFix = `wait an hour and lower jobs, or set youtube.cookies_from_browser = "auto" to use your default browser's YouTube sign-in`
+
+// botCheckError is ErrBotCheck plus why the browser cookies, if any, weren't
+// sent: yt-dlp only warns about that, and it changes the fix.
+type botCheckError struct{ cookieTrouble string }
+
+func (e *botCheckError) Error() string {
+	if e.cookieTrouble != "" {
+		return ErrBotCheck.Error() + " (" + e.cookieTrouble + ")"
+	}
+	return ErrBotCheck.Error()
+}
+
+func (e *botCheckError) Is(target error) bool { return target == ErrBotCheck }
+
+// BotCheckAdvice is what to tell the user after ErrBotCheck, given the
+// resolved cookie source ("" when cookies are off).
+func BotCheckAdvice(cookieSource string, err error) string {
+	msg := "YouTube is blocking downloads from this IP (\"confirm you're not a bot\"). "
+	var be *botCheckError
+	switch {
+	case cookieSource == "":
+		return msg + "Fix: " + BotCheckFix + " (in ~/.config/geet/config.toml, under [youtube])."
+	case errors.As(err, &be) && be.cookieTrouble != "":
+		return msg + "Your cookies (" + cookieSource + ") aren't being sent: " + be.cookieTrouble + `. Run "geet doctor" to check them.`
+	}
+	return msg + "Cookies from " + cookieSource + " didn't help: make sure you're signed in to YouTube in that browser, or wait an hour and lower jobs."
+}
 
 type Runner struct {
 	Binary             string
@@ -83,7 +110,9 @@ func (r Runner) RunLines(ctx context.Context, onLine func(string), args ...strin
 			return ctx.Err()
 		}
 		if isBotCheck(stderr.String()) {
-			return fmt.Errorf("%w: %s", ErrBotCheck, BotCheckFix)
+			// Short on purpose: it's shown per track, and the fix, which
+			// depends on the cookie setup, is shown once by the caller.
+			return &botCheckError{cookieTrouble: CookieTrouble(stderr.String())}
 		}
 		// Lead with yt-dlp's own explanation: it is what a one-line display
 		// has room for, and "exit status 1" says nothing.

@@ -76,6 +76,7 @@ const (
 // result is fixed (tools, setup, services).
 func Run(ctx context.Context, env Env) []Check {
 	cfg := env.Config
+	cookies := checkCookies(ctx, &cfg)
 	checks := []Check{
 		checkYtDlp(ctx, cfg.Tools.YtDlp, env.Now),
 		checkFFmpeg(ctx, cfg.Tools.FFmpeg, cfg.Format),
@@ -84,6 +85,9 @@ func Run(ctx context.Context, env Env) []Check {
 		checkConfig(env),
 		checkLibrary(cfg.Output),
 		checkIndex(cfg.IndexPath),
+	}
+	if cookies.Name != "" {
+		checks = append(checks, cookies)
 	}
 	if env.Offline {
 		return append(checks, Check{Group: groupServices, Name: "network", Status: Skip, Detail: "not checked (--offline)"})
@@ -469,6 +473,52 @@ func checkITunes(ctx context.Context, cfg config.Config) Check {
 		return c
 	}
 	c.Status, c.Detail = OK, fmt.Sprintf("reachable (%s store, found %q)", strings.ToUpper(cfg.Search.Country), t.Title)
+	return c
+}
+
+// checkCookies resolves youtube.cookies_from_browser (writing the result
+// back into cfg for the YouTube check) and makes sure the cookies really
+// decrypt: when they don't, yt-dlp sends none and says so only in a warning.
+// Returns a zero Check when cookies aren't configured.
+func checkCookies(ctx context.Context, cfg *config.Config) Check {
+	setting := cfg.YouTube.CookiesFromBrowser
+	if setting == "" {
+		return Check{}
+	}
+	c := Check{Group: groupSetup, Name: "cookies"}
+	src, err := ytdlp.CookieSource(setting, ytdlp.SystemProbes())
+	if err != nil {
+		c.Status, c.Detail = Fail, err.Error()
+		c.Fix = `set youtube.cookies_from_browser to your browser's name (brave, chromium, chrome, firefox, vivaldi, edge, opera)`
+		return c
+	}
+	cfg.YouTube.CookiesFromBrowser = src
+	shown := src
+	if src != setting {
+		shown = fmt.Sprintf("%s → %s", setting, src)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	path, err := exec.LookPath(cfg.Tools.YtDlp)
+	if err != nil {
+		c.Status, c.Detail = Skip, shown+" (not checked: yt-dlp missing)"
+		return c
+	}
+	var stderr strings.Builder
+	cmd := exec.CommandContext(ctx, path, "--cookies-from-browser", src, "--flat-playlist", "--simulate", "--print", "id", "ytsearch1:test")
+	cmd.Stderr = &stderr
+	runErr := cmd.Run()
+	switch trouble := ytdlp.CookieTrouble(stderr.String()); {
+	case trouble != "":
+		c.Status, c.Detail = Fail, shown+": "+trouble
+		c.Fix = `name the keyring explicitly, e.g. "brave+gnomekeyring" or "brave+kwallet6", or sign in to YouTube in that browser`
+	case runErr != nil && strings.Contains(stderr.String(), "unsupported browser"):
+		c.Status, c.Detail = Fail, shown+": yt-dlp doesn't support that browser"
+		c.Fix = "use brave, chromium, chrome, firefox, vivaldi, edge or opera"
+	default:
+		c.Status, c.Detail = OK, shown+" (readable; YouTube sees your account)"
+	}
 	return c
 }
 
