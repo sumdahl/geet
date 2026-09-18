@@ -65,6 +65,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      - name: Install the latest release
-        run: GEET_INSTALL_DIR="$RUNNER_TEMP/bin" sh install.sh
+      - name: Install the latest release, as curl | sh does
+        run: GEET_INSTALL_DIR="$RUNNER_TEMP/bin" sh < install.sh
       - run: '"$RUNNER_TEMP/bin/geet" version'
+      - name: A failed install must exit non-zero
+        run: |
+          if GEET_VERSION=v0.0.0-missing GEET_INSTALL_DIR="$RUNNER_TEMP/none" sh < install.sh; then
+            echo "::error::install.sh exited 0 for a release that doesn't exist"
+            exit 1
+          fi

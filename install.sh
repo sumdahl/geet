@@ -21,7 +21,9 @@ fail() {
 has() { command -v "$1" >/dev/null 2>&1; }
 
 # Everything runs from main, called on the last line, so a download cut
-# short midway through never runs half a script.
+# short midway through never runs half a script. Keep this file ASCII:
+# bash 3.2, which is macOS's /bin/sh, reads a byte of a non-ASCII character after $var as
+# part of the variable name.
 main() {
 	has curl || fail "curl is needed"
 
@@ -58,9 +60,12 @@ main() {
 	dir=${GEET_INSTALL_DIR:-$HOME/.local/bin}
 
 	tmp=$(mktemp -d 2>/dev/null || mktemp -d -t geet)
-	trap 'rm -rf "$tmp"' EXIT INT TERM
+	# Keep the exit status: old shells (macOS's /bin/sh is bash 3.2) report
+	# the trap's own status instead, which turned failures into success.
+	trap 'rc=$?; rm -rf "$tmp"; exit $rc' EXIT
+	trap 'exit 130' INT TERM
 
-	say "Downloading geet $version for $os/$arch…"
+	say "Downloading geet ${version} for ${os}/${arch}..."
 	curl -fsSL "$base/$asset" -o "$tmp/$asset" ||
 		fail "$version has no $asset download (see https://github.com/$repo/releases)"
 	curl -fsSL "$base/SHA256SUMS" -o "$tmp/SHA256SUMS" ||
