@@ -4,26 +4,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-Deliverable 1 is done: config loading (`internal/config`), the Spotify client and URL parsing (`internal/spotify`), and a `cmd/spotify-dl` whose `download` currently only resolves and prints metadata. `watch` is a stub. The docs in `docs/` are the spec, so read the relevant one before implementing a component. `docs/00-overview.md` indexes them.
+Deliverable 1 is done. `cmd/spotify-dl download` resolves and prints metadata only, and `watch` is a stub. The docs in `docs/` are the spec, so read the relevant one before implementing a component. `docs/00-overview.md` indexes them.
 
-Spotify client notes:
-- Spotify returns absolute `next` URLs, so the fixture JSON in `internal/spotify/testdata` uses a `{{base}}` placeholder that the test server rewrites.
-- Albums need a second batch `/tracks?ids=` call because album-track listings carry no ISRC.
+## Metadata sources
+
+The user's Spotify account is free, and the Web API needs Premium, so there are two sources (details in `docs/01-engine-spec.md` §1):
+- **Keyless, the default:** `spotify.Web` scrapes the embed pages' `__NEXT_DATA__` plus the track page's `music:*` meta tags. Those tags are only served to a crawler User-Agent (`facebookexternalhit/1.1`); a browser UA gets none.
+  - Playlists cap at 100 tracks.
+  - Album tracks are numbered by position.
+  - `internal/deezer` then fills in ISRC and disc/track numbers, best effort. A Deezer failure only logs a warning.
+- **Official API:** `spotify.API` is used only when the config has credentials, via `cmd/spotify-dl` `resolve()`.
+- Both sources return `spotify.Track`.
+- Deezer search is geo-filtered. From Nepal it hides roughly 30% of major-label tracks, even though `/track/isrc:{isrc}` finds them. Missing ISRCs are therefore expected and not a matching bug.
+- Scraped pages break silently when Spotify changes its markup. Parsing failures wrap `spotify.ErrPageFormat`. When one fires, fetch the live page and update both the parser and the fixtures in `internal/spotify/testdata`.
+- Spotify pages and the Deezer API both return absolute `next` URLs, so the test fixtures use a `{{base}}` placeholder that the test server rewrites.
 
 Work proceeds in the order given in `docs/07-roadmap.md`, and **you must pause for user review after each deliverable**. After deliverable 3 (single-track download, tag and `--json`), stop and let the user use the engine by hand before starting on concurrency or the plugin. Do not build the playerctl v2 feature (`docs/05-future-v2-playerctl.md`) until plugin v1 works.
 
 ## What this is
 
-A Go CLI that takes a Spotify track, album or playlist URL, gets metadata from the Spotify Web API, finds the matching audio on YouTube, downloads it with `yt-dlp`, transcodes it with `ffmpeg`, then tags and saves it. It behaves like spotdl but is a native binary.
+A Go CLI that takes a Spotify track, album or playlist URL, gets its metadata (see below), finds the matching audio on YouTube, downloads it with `yt-dlp`, transcodes it with `ffmpeg`, then tags and saves it. It behaves like spotdl but is a native binary.
 
 ## Architecture rules (non-negotiable)
 
 - **Never reimplement YouTube extraction.** Shell out to the `yt-dlp` binary for search and download, and to `ffmpeg` for transcoding and embedding cover art. Go handles metadata resolution, match scoring, orchestration, concurrency and the CLI.
 - **The engine has no Omarchy dependency.** `spotify-dl` must work the same from any terminal on any Linux box. The Omarchy/Quickshell plugin (`omarchy-plugin-spotify-dl`, a separate repo built later) only runs this binary and reads its NDJSON output. It never imports engine internals.
 
-## Layout (planned)
+## Layout
 
-- `internal/spotify`: Client Credentials OAuth2 using `client_id`/`client_secret` from `~/.config/spotify-dl/config.toml`. The user supplies this file; the tool never generates it. Also URL parsing and paginated album/playlist fetches.
+- `internal/config`: `~/.config/spotify-dl/config.toml` is optional, and every key has a default. The tool never writes the file.
+- `internal/spotify` and `internal/deezer`: built. See "Metadata sources".
 - `internal/youtube`: `yt-dlp "ytsearch5:{artists} - {title}" --dump-json --no-download`, then scores the candidates. Rejects any candidate whose duration is more than 10s from Spotify's `duration_ms`, prefers official or topic channels, and penalizes live/cover/remix unless the Spotify title has the same word.
 - `internal/download`: `yt-dlp -f bestaudio --extract-audio --audio-format {opus|flac|mp3} --audio-quality 0` into a temp path.
 - `internal/tag`: ID3v2 for mp3 (`bogem/id3v2`) and Vorbis comments for flac/opus. `ffmpeg -metadata … -disposition:v attached_pic` is the cross-format fallback for cover art. ISRC goes in TXXX.

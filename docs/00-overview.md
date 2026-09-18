@@ -2,7 +2,8 @@
 
 ## Goal
 Given a Spotify track/album/playlist URL, fetch accurate metadata from
-Spotify's Web API, find the best-matching audio on YouTube, download it via
+Spotify (public pages by default, the Web API when credentials are set —
+see `01-engine-spec.md`), find the best-matching audio on YouTube, download it via
 yt-dlp, transcode with ffmpeg, tag the file with correct title/artist/album/
 track-number/year/album-art, and save it to a configured music library path.
 

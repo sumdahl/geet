@@ -12,13 +12,12 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-var (
-	ErrNoConfig = errors.New("config file not found")
-	ErrInvalid  = errors.New("invalid config")
-)
+var ErrInvalid = errors.New("invalid config")
 
 var formats = []string{"opus", "flac", "mp3"}
 
+// Spotify credentials are optional: with none, metadata comes from Spotify's
+// public web pages, since the Web API needs a Premium account.
 type Spotify struct {
 	ClientID     string `toml:"client_id"`
 	ClientSecret string `toml:"client_secret"`
@@ -50,12 +49,11 @@ func DefaultPath() (string, error) {
 	return filepath.Join(dir, "spotify-dl", "config.toml"), nil
 }
 
+// Load reads path over the defaults. A missing file is not an error; every
+// setting has a default.
 func Load(path string) (Config, error) {
 	cfg := Default()
-	if _, err := toml.DecodeFile(path, &cfg); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return Config{}, fmt.Errorf("%w: create %s with:\n\n[spotify]\nclient_id = \"...\"\nclient_secret = \"...\"\n\n(get both from https://developer.spotify.com/dashboard)", ErrNoConfig, path)
-		}
+	if _, err := toml.DecodeFile(path, &cfg); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return Config{}, fmt.Errorf("reading %s: %w", path, err)
 	}
 	out, err := ExpandHome(cfg.Output)
@@ -69,10 +67,14 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
+func (c Config) HasAPICredentials() bool {
+	return c.Spotify.ClientID != "" && c.Spotify.ClientSecret != ""
+}
+
 func (c Config) Validate() error {
 	var errs []error
-	if c.Spotify.ClientID == "" || c.Spotify.ClientSecret == "" {
-		errs = append(errs, errors.New("spotify.client_id and spotify.client_secret are required"))
+	if (c.Spotify.ClientID == "") != (c.Spotify.ClientSecret == "") {
+		errs = append(errs, errors.New("set both spotify.client_id and spotify.client_secret, or neither"))
 	}
 	if !slices.Contains(formats, c.Format) {
 		errs = append(errs, fmt.Errorf("format %q must be one of %s", c.Format, strings.Join(formats, ", ")))

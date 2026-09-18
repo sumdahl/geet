@@ -15,7 +15,7 @@ import (
 
 // newTestClient serves fixtures keyed by "path?query"; a fixture's {{base}}
 // placeholder is replaced with the server URL so `next` links page back to it.
-func newTestClient(t *testing.T, routes map[string]string) *Client {
+func newTestAPI(t *testing.T, routes map[string]string) *API {
 	t.Helper()
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,10 +47,10 @@ func newTestClient(t *testing.T, routes map[string]string) *Client {
 		w.Write([]byte(strings.ReplaceAll(string(body), "{{base}}", srv.URL+"/v1")))
 	}))
 	t.Cleanup(srv.Close)
-	return New("id", "secret", WithBaseURL(srv.URL+"/v1"), WithTokenURL(srv.URL+"/token"))
+	return NewAPI("id", "secret", WithBaseURL(srv.URL+"/v1"), WithTokenURL(srv.URL+"/token"))
 }
 
-func TestResolve(t *testing.T) {
+func TestAPIResolve(t *testing.T) {
 	routes := map[string]string{
 		"/tracks/5ghIJDpPoe3CfHMGu71E6T":                        "track.json",
 		"/albums/alb":                                           "album.json",
@@ -59,7 +59,7 @@ func TestResolve(t *testing.T) {
 		"/playlists/pl/tracks?limit=100&additional_types=track": "playlist_1.json",
 		"/playlists/pl/tracks?offset=3&limit=100":               "playlist_2.json",
 	}
-	c := newTestClient(t, routes)
+	c := newTestAPI(t, routes)
 
 	tests := []struct {
 		name string
@@ -111,8 +111,8 @@ func TestResolve(t *testing.T) {
 	}
 }
 
-func TestResolveNotFound(t *testing.T) {
-	c := newTestClient(t, nil)
+func TestAPIResolveNotFound(t *testing.T) {
+	c := newTestAPI(t, nil)
 	_, err := c.Resolve(context.Background(), Ref{KindTrack, "missing"})
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)

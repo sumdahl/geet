@@ -41,8 +41,18 @@ func TestLoad(t *testing.T) {
 			},
 		},
 		{
-			name:    "missing credentials",
-			body:    "format = \"mp3\"\n",
+			name: "no credentials is valid",
+			body: "format = \"mp3\"\n",
+			want: Config{
+				Output:      filepath.Join(home, "Music"),
+				Format:      "mp3",
+				Jobs:        4,
+				ResolveJobs: 8,
+			},
+		},
+		{
+			name:    "half the credentials",
+			body:    "[spotify]\nclient_id = \"id\"\n",
 			wantErr: ErrInvalid,
 		},
 		{
@@ -74,9 +84,16 @@ func TestLoad(t *testing.T) {
 	}
 }
 
-func TestLoadMissingFile(t *testing.T) {
-	_, err := Load(filepath.Join(t.TempDir(), "nope.toml"))
-	if !errors.Is(err, ErrNoConfig) {
-		t.Fatalf("err = %v, want ErrNoConfig", err)
+func TestLoadMissingFileUsesDefaults(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	got, err := Load(filepath.Join(t.TempDir(), "nope.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Default()
+	want.Output = filepath.Join(home, "Music")
+	if got != want {
+		t.Errorf("got %+v, want %+v", got, want)
 	}
 }

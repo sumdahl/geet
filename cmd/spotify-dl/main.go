@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/sumdahl/spotify-dl/internal/config"
+	"github.com/sumdahl/spotify-dl/internal/deezer"
 	"github.com/sumdahl/spotify-dl/internal/spotify"
 )
 
@@ -159,8 +160,7 @@ func download(ctx context.Context, args []string, stderr io.Writer) int {
 		return exitFatal
 	}
 
-	client := spotify.New(cfg.Spotify.ClientID, cfg.Spotify.ClientSecret)
-	tracks, err := client.Resolve(ctx, ref)
+	tracks, err := resolve(ctx, cfg, ref)
 	if err != nil {
 		fmt.Fprintf(stderr, "spotify-dl: %v\n", err)
 		return exitFatal
@@ -168,12 +168,46 @@ func download(ctx context.Context, args []string, stderr io.Writer) int {
 
 	fmt.Fprintf(stderr, "%s %s: %d track(s)\n", ref.Kind, ref.ID, len(tracks))
 	for i, t := range tracks {
-		fmt.Fprintf(stderr, "%3d. %s – %s (%s, %d, %d:%02d, %s)\n",
-			i+1, strings.Join(t.Artists, ", "), t.Title, t.Album, t.Year,
+		fmt.Fprintf(stderr, "%3d. %s – %s (%s #%d-%d, %d, %d:%02d, %s)\n",
+			i+1, strings.Join(t.Artists, ", "), t.Title, t.Album, t.DiscNumber, t.TrackNumber, t.Year,
 			int(t.Duration.Minutes()), int(t.Duration.Seconds())%60, orDash(t.ISRC))
 	}
 	fmt.Fprintln(stderr, "(metadata only: downloading is not implemented yet)")
 	return exitOK
+}
+
+// resolve uses the official API when credentials are configured. Otherwise it
+// reads Spotify's public pages and fills in ISRC and disc numbers from Deezer,
+// which is best effort: a failed lookup only costs those tags.
+func resolve(ctx context.Context, cfg config.Config, ref spotify.Ref) ([]spotify.Track, error) {
+	if cfg.HasAPICredentials() {
+		slog.DebugContext(ctx, "metadata source: Spotify Web API")
+		return spotify.NewAPI(cfg.Spotify.ClientID, cfg.Spotify.ClientSecret).Resolve(ctx, ref)
+	}
+
+	slog.DebugContext(ctx, "metadata source: Spotify public pages + Deezer")
+	tracks, err := spotify.NewWeb("").Resolve(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+
+	dz := deezer.New("")
+	if ref.Kind == spotify.KindAlbum {
+		err = dz.EnrichAlbum(ctx, tracks)
+	} else {
+		for i := range tracks {
+			if err = dz.EnrichTrack(ctx, &tracks[i]); err != nil {
+				break
+			}
+		}
+	}
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		slog.WarnContext(ctx, "Deezer lookup failed; ISRC and disc numbers may be missing", "err", err)
+	}
+	return tracks, nil
 }
 
 func setupLogging(w io.Writer, verbose bool) {

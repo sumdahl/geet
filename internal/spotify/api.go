@@ -27,26 +27,11 @@ const (
 var (
 	ErrAuth      = errors.New("spotify authentication failed")
 	ErrForbidden = errors.New("spotify refused the request")
-	ErrNotFound  = errors.New("spotify resource not found")
 )
 
-type Track struct {
-	ID          string
-	Title       string
-	Artists     []string
-	AlbumArtist string
-	Album       string
-	CoverURL    string
-	TrackNumber int
-	DiscNumber  int
-	Year        int
-	Duration    time.Duration
-	ISRC        string
-}
-
-func (t Track) URL() string { return Ref{Kind: KindTrack, ID: t.ID}.URL() }
-
-type Client struct {
+// API reads metadata from the official Web API, which needs app credentials
+// from a Spotify Premium account.
+type API struct {
 	http    *http.Client
 	baseURL string
 }
@@ -61,7 +46,7 @@ type Option func(*options)
 func WithBaseURL(u string) Option  { return func(o *options) { o.baseURL = u } }
 func WithTokenURL(u string) Option { return func(o *options) { o.tokenURL = u } }
 
-func New(clientID, clientSecret string, opts ...Option) *Client {
+func NewAPI(clientID, clientSecret string, opts ...Option) *API {
 	o := options{baseURL: defaultBaseURL, tokenURL: defaultTokenURL}
 	for _, opt := range opts {
 		opt(&o)
@@ -75,10 +60,10 @@ func New(clientID, clientSecret string, opts ...Option) *Client {
 	// to a request context; per-request cancellation comes from req.Context().
 	hc := cc.Client(context.Background())
 	hc.Timeout = 30 * time.Second
-	return &Client{http: hc, baseURL: strings.TrimRight(o.baseURL, "/")}
+	return &API{http: hc, baseURL: strings.TrimRight(o.baseURL, "/")}
 }
 
-func (c *Client) Resolve(ctx context.Context, ref Ref) ([]Track, error) {
+func (c *API) Resolve(ctx context.Context, ref Ref) ([]Track, error) {
 	switch ref.Kind {
 	case KindTrack:
 		t, err := c.Track(ctx, ref.ID)
@@ -95,7 +80,7 @@ func (c *Client) Resolve(ctx context.Context, ref Ref) ([]Track, error) {
 	}
 }
 
-func (c *Client) Track(ctx context.Context, id string) (Track, error) {
+func (c *API) Track(ctx context.Context, id string) (Track, error) {
 	var t apiTrack
 	if err := c.get(ctx, c.baseURL+"/tracks/"+url.PathEscape(id), &t); err != nil {
 		return Track{}, fmt.Errorf("fetching track %s: %w", id, err)
@@ -106,7 +91,7 @@ func (c *Client) Track(ctx context.Context, id string) (Track, error) {
 // Album returns every track on the album. The album-tracks listing only has
 // simplified track objects (no ISRC), so ISRCs are filled in from the batch
 // tracks endpoint afterwards.
-func (c *Client) Album(ctx context.Context, id string) ([]Track, error) {
+func (c *API) Album(ctx context.Context, id string) ([]Track, error) {
 	var a struct {
 		apiAlbum
 		Tracks page[apiTrack] `json:"tracks"`
@@ -135,7 +120,7 @@ func (c *Client) Album(ctx context.Context, id string) ([]Track, error) {
 	return tracks, nil
 }
 
-func (c *Client) fillISRC(ctx context.Context, tracks []Track) error {
+func (c *API) fillISRC(ctx context.Context, tracks []Track) error {
 	for start := 0; start < len(tracks); start += maxTracksPerGet {
 		batch := tracks[start:min(start+maxTracksPerGet, len(tracks))]
 		ids := make([]string, len(batch))
@@ -162,7 +147,7 @@ func (c *Client) fillISRC(ctx context.Context, tracks []Track) error {
 	return nil
 }
 
-func (c *Client) Playlist(ctx context.Context, id string) ([]Track, error) {
+func (c *API) Playlist(ctx context.Context, id string) ([]Track, error) {
 	type item struct {
 		Track *apiTrack `json:"track"`
 	}
@@ -190,7 +175,7 @@ func (c *Client) Playlist(ctx context.Context, id string) ([]Track, error) {
 	return tracks, nil
 }
 
-func (c *Client) get(ctx context.Context, u string, v any) error {
+func (c *API) get(ctx context.Context, u string, v any) error {
 	for attempt := 0; ; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 		if err != nil {
@@ -332,13 +317,4 @@ func largest(imgs []apiImage) string {
 		}
 	}
 	return u
-}
-
-// release_date precision varies ("2011", "2011-03", "2011-03-14").
-func year(date string) int {
-	if len(date) < 4 {
-		return 0
-	}
-	y, _ := strconv.Atoi(date[:4])
-	return y
 }
