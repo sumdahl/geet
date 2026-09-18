@@ -198,7 +198,12 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 func downloadList(ctx context.Context, c *cli, cfg config.Config, rep *reporter, link, from string, stderr io.Writer) int {
 	in := io.Reader(os.Stdin)
 	if from != "-" {
-		f, err := os.Open(from)
+		// Shells don't expand ~ after "=", as in --tracks=~/links.txt.
+		path, err := config.ExpandHome(from)
+		if err != nil {
+			return rep.fatal(err)
+		}
+		f, err := os.Open(path)
 		if err != nil {
 			return rep.fatal(err)
 		}
