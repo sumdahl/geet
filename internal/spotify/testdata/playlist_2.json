@@ -1,0 +1,7 @@
+{
+  "items": [
+    {"track": {"id": null, "name": "my-rip.mp3", "type": "track", "is_local": true}},
+    {"track": {"id": "p2", "name": "Second", "type": "track", "artists": [{"name": "B"}], "album": {"name": "AlbB", "artists": [{"name": "B"}], "images": [{"url": "https://img/b", "width": 640}], "release_date": "1999-01-01"}, "track_number": 7, "disc_number": 1, "duration_ms": 200000, "external_ids": {"isrc": "PISRC2"}}}
+  ],
+  "next": null
+}

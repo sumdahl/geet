@@ -1,0 +1,6 @@
+{
+  "items": [
+    {"id": "t3", "name": "Three", "type": "track", "artists": [{"name": "Alpha"}], "track_number": 1, "disc_number": 2, "duration_ms": 3000}
+  ],
+  "next": null
+}

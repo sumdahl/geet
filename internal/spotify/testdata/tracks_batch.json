@@ -1,0 +1,7 @@
+{
+  "tracks": [
+    {"id": "t1", "name": "One", "external_ids": {"isrc": "ISRC0001"}},
+    {"id": "t2", "name": "Two", "external_ids": {"isrc": "ISRC0002"}},
+    null
+  ]
+}

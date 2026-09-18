@@ -1,0 +1,8 @@
+{
+  "items": [
+    {"track": {"id": "p1", "name": "First", "type": "track", "artists": [{"name": "A"}], "album": {"name": "AlbA", "artists": [{"name": "A"}], "images": [], "release_date": "2020-05"}, "track_number": 3, "disc_number": 1, "duration_ms": 180000, "external_ids": {"isrc": "PISRC1"}}},
+    {"track": null},
+    {"track": {"id": "ep1", "name": "A Podcast", "type": "episode"}}
+  ],
+  "next": "{{base}}/playlists/pl/tracks?offset=3&limit=100"
+}

@@ -1,0 +1,21 @@
+{
+  "id": "5ghIJDpPoe3CfHMGu71E6T",
+  "name": "Bohemian Rhapsody",
+  "type": "track",
+  "is_local": false,
+  "artists": [{"name": "Queen"}],
+  "album": {
+    "name": "A Night at the Opera",
+    "artists": [{"name": "Queen"}],
+    "images": [
+      {"url": "https://i.scdn.co/image/300", "width": 300, "height": 300},
+      {"url": "https://i.scdn.co/image/640", "width": 640, "height": 640},
+      {"url": "https://i.scdn.co/image/64", "width": 64, "height": 64}
+    ],
+    "release_date": "1975-11-21"
+  },
+  "track_number": 11,
+  "disc_number": 1,
+  "duration_ms": 354320,
+  "external_ids": {"isrc": "GBUM71029604"}
+}
