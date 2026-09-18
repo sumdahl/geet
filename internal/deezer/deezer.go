@@ -15,11 +15,11 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	"golang.org/x/time/rate"
 
 	"github.com/sumdahl/spotify-dl/internal/spotify"
+	"github.com/sumdahl/spotify-dl/internal/textnorm"
 )
 
 const (
@@ -105,7 +105,7 @@ func pairAlbum(tracks []spotify.Track, dz []dzTrack, matched []bool) {
 	used := make([]bool, len(dz))
 	for i := range tracks {
 		for j, d := range dz {
-			if !used[j] && norm(d.Title) == norm(tracks[i].Title) && durationClose(tracks[i].Duration, d.Duration) {
+			if !used[j] && textnorm.Norm(d.Title) == textnorm.Norm(tracks[i].Title) && durationClose(tracks[i].Duration, d.Duration) {
 				d.apply(&tracks[i], true)
 				matched[i], used[j] = true, true
 				break
@@ -126,7 +126,7 @@ func (c *Client) EnrichTrack(ctx context.Context, t *spotify.Track) error {
 			return err
 		}
 		for _, d := range dz {
-			if norm(d.Title) == norm(t.Title) && durationClose(t.Duration, d.Duration) {
+			if textnorm.Norm(d.Title) == textnorm.Norm(t.Title) && durationClose(t.Duration, d.Duration) {
 				d.apply(t, true)
 				return nil
 			}
@@ -157,10 +157,10 @@ func (c *Client) EnrichTrack(ctx context.Context, t *spotify.Track) error {
 			continue
 		}
 		score := 0
-		if norm(d.Title) == norm(t.Title) {
+		if textnorm.Norm(d.Title) == textnorm.Norm(t.Title) {
 			score += 2
 		}
-		sameAlbum := norm(d.Album.Title) == norm(t.Album)
+		sameAlbum := textnorm.Norm(d.Album.Title) == textnorm.Norm(t.Album)
 		if sameAlbum {
 			score += 4
 		}
@@ -184,7 +184,7 @@ func (c *Client) EnrichTrack(ctx context.Context, t *spotify.Track) error {
 }
 
 func (c *Client) cachedAlbum(ctx context.Context, artist, album string) ([]dzTrack, error) {
-	key := norm(artist) + "\x00" + norm(album)
+	key := textnorm.Norm(artist) + "\x00" + textnorm.Norm(album)
 	c.mu.Lock()
 	dz, ok := c.albums[key]
 	c.mu.Unlock()
@@ -226,7 +226,7 @@ func (c *Client) findAlbum(ctx context.Context, artist, album string, n int) (in
 	}
 	var fallback int64
 	for _, a := range res.Data {
-		if norm(a.Title) != norm(album) || !strings.Contains(norm(artist), norm(a.Artist.Name)) {
+		if textnorm.Norm(a.Title) != textnorm.Norm(album) || !strings.Contains(textnorm.Norm(artist), textnorm.Norm(a.Artist.Name)) {
 			continue
 		}
 		if n == 0 || a.NbTracks == n {
@@ -335,7 +335,7 @@ func (c *Client) fetch(ctx context.Context, u string) ([]byte, error) {
 // 2009" against Deezer's "Song (Remastered 2009)", but relies on duration to
 // tell a remix or live cut apart from the original.
 func sameRecording(t spotify.Track, dzTitle string, dzSeconds int) bool {
-	return durationClose(t.Duration, dzSeconds) && (norm(dzTitle) == norm(t.Title) || base(dzTitle) == base(t.Title))
+	return durationClose(t.Duration, dzSeconds) && (textnorm.Norm(dzTitle) == textnorm.Norm(t.Title) || textnorm.Base(dzTitle) == textnorm.Base(t.Title))
 }
 
 func durationClose(d time.Duration, dzSeconds int) bool {
@@ -344,32 +344,11 @@ func durationClose(d time.Duration, dzSeconds int) bool {
 }
 
 func hasArtist(artists []string, name string) bool {
-	n := norm(name)
+	n := textnorm.Norm(name)
 	for _, a := range artists {
-		if norm(a) == n {
+		if textnorm.Norm(a) == n {
 			return true
 		}
 	}
 	return false
-}
-
-func norm(s string) string {
-	s = strings.Map(func(r rune) rune {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			return unicode.ToLower(r)
-		}
-		return ' '
-	}, s)
-	return strings.Join(strings.Fields(s), " ")
-}
-
-// base drops a trailing " - Remastered"/"(feat. X)"/"[Live]" style suffix.
-func base(s string) string {
-	if i := strings.IndexAny(s, "(["); i > 0 {
-		s = s[:i]
-	}
-	if i := strings.Index(s, " - "); i > 0 {
-		s = s[:i]
-	}
-	return norm(s)
 }

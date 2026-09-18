@@ -1,0 +1,8 @@
+#!/bin/sh
+# Stands in for yt-dlp in tests: records its arguments, replays a fixture.
+printf '%s\n' "$@" > "$FAKE_YTDLP_ARGS"
+if [ -n "$FAKE_YTDLP_FAIL" ]; then
+	echo "ERROR: [youtube] sign in to confirm you're not a bot" >&2
+	exit 1
+fi
+cat "$FAKE_YTDLP_OUTPUT"

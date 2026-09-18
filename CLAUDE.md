@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-Deliverable 1 is done. `cmd/spotify-dl download` resolves and prints metadata only, and `watch` is a stub. The docs in `docs/` are the spec, so read the relevant one before implementing a component. `docs/00-overview.md` indexes them.
+Deliverables 1 and 2 are done. `cmd/spotify-dl download` resolves metadata and the YouTube match for each track but doesn't download yet, and `watch` is a stub. The docs in `docs/` are the spec, so read the relevant one before implementing a component. `docs/00-overview.md` indexes them.
 
 ## Metadata sources
 
@@ -32,9 +32,17 @@ A Go CLI that takes a Spotify track, album or playlist URL, gets its metadata (s
 
 ## Layout
 
-- `internal/config`: `~/.config/spotify-dl/config.toml` is optional, and every key has a default. The tool never writes the file.
+- `internal/config`: the engine is a backend for the Omarchy plugin, so everything is configurable.
+  - `Config.Settings()` is the single list: each entry is automatically a TOML key, a `--flag` and a `SPOTIFY_DL_*` env variable (precedence flag > env > file > default), and is listed by `spotify-dl config settings --json`.
+  - To add a setting, add the struct field and one `Settings()` entry. `TestSettingsCoverConfig` fails if you forget the entry.
+  - The config file is optional. Unknown keys in it are an error.
 - `internal/spotify` and `internal/deezer`: built. See "Metadata sources".
-- `internal/youtube`: `yt-dlp "ytsearch5:{artists} - {title}" --dump-json --no-download`, then scores the candidates. Rejects any candidate whose duration is more than 10s from Spotify's `duration_ms`, prefers official or topic channels, and penalizes live/cover/remix unless the Spotify title has the same word.
+- `internal/youtube`: built.
+  - `yt-dlp ytsearchN:<query> --flat-playlist --dump-json` (about 1.5s), then scoring in `score.go`, which keeps every candidate's score or rejection reason (`-v` logs them).
+  - `testdata/*.ndjson` are real searches. When a live search picks wrong, capture it as a fixture and add a case to `TestBestOnRealSearches` before changing weights.
+  - `testdata/fake-yt-dlp` stands in for the binary in tests.
+- `internal/library`: output path = `output` + `output_template` + extension. Each template segment is exactly one path component, sanitized.
+- `internal/textnorm`: shared title/name normalization. It keeps Unicode marks so Devanagari words don't split apart.
 - `internal/download`: `yt-dlp -f bestaudio --extract-audio --audio-format {opus|flac|mp3} --audio-quality 0` into a temp path.
 - `internal/tag`: ID3v2 for mp3 (`bogem/id3v2`) and Vorbis comments for flac/opus. `ffmpeg -metadata … -disposition:v attached_pic` is the cross-format fallback for cover art. ISRC goes in TXXX.
 - `cmd/spotify-dl`: the subcommands `download <url>` and `watch`. `watch` is a daemon that polls `wl-paste` (Wayland, not xclip) about once a second and sends a `notify-send` notification with the cover art. Flags: `--format --output --bitrate --jobs --resolve-jobs --json`.

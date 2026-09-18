@@ -24,11 +24,23 @@ it can't be the only path. Two sources, chosen by config:
   largest cover URL, track/disc number, release year, duration, ISRC.
 
 ## 2. YouTube resolver (`internal/youtube`)
-- Query: `yt-dlp "ytsearch5:{artists} - {title}" --dump-json --no-download`.
-- Score the 5 candidates: title/artist token overlap, duration delta vs
-  Spotify's `duration_ms` (reject if off by >10s), prefer official/topic
-  channels, penalize "live"/"cover"/"remix" unless Spotify's title has it too.
-- Return the best match's URL.
+- Query: `yt-dlp "ytsearch{N}:{query}" --flat-playlist --dump-json`, where
+  query is `youtube.search_query` (default `{artists} - {title}`) and N is
+  `youtube.search_results` (default 5). `--flat-playlist` returns in ~1.5s
+  and still carries title, channel, duration, views and the verified flag.
+- Score every candidate (`score.go`), keeping all verdicts for debugging
+  (`-v` logs them):
+  - Reject: live streams, length off by more than
+    `youtube.max_duration_diff` (default 10s), <60% of the base title's
+    words (base = without "(feat. X)" / " - Remastered"), no artist named in
+    title or channel.
+  - Reward: title coverage, primary artist named, official channel (exact
+    name, "Artist - Topic", VEVO, or a verified channel using part of the
+    name), verified, "audio" in title, duration closeness, search rank.
+  - Penalize "live", "cover", "remix", "concert", "sped up", … unless the
+    Spotify title contains the same word.
+- Fixtures in `testdata/` are real yt-dlp output; add one whenever a real
+  search picks wrong.
 
 ## 3. Downloader (`internal/download`)
 - `yt-dlp -f bestaudio --extract-audio --audio-format {opus|flac|mp3}
@@ -45,11 +57,34 @@ it can't be the only path. Two sources, chosen by config:
 - Fields: title, artist, album artist, album, track/disc number, date,
   ISRC (TXXX), embedded cover.
 
+## Output path (`internal/library`)
+- `output` (default `~/Music`) + `output_template` (default
+  `{album_artist}/{album}/{track} {title}`) + `.{format}`.
+- Placeholders: `{title} {artist} {artists} {album} {album_artist} {track}
+  {disc} {year} {isrc} {spotify_id}`. Each `/`-separated template segment
+  is exactly one path component; values are sanitized (no `/`, FAT-unsafe
+  characters removed) so metadata can't escape `output`.
+
+## Configuration (`internal/config`)
+Every setting is defined once in `Config.Settings()` and is automatically
+available three ways, in increasing precedence:
+1. `~/.config/spotify-dl/config.toml` (or `$SPOTIFY_DL_CONFIG`, or
+   `--config`) — optional; unknown keys are an error.
+2. Environment: `SPOTIFY_DL_<KEY>` with dots as underscores, e.g.
+   `SPOTIFY_DL_YOUTUBE_SEARCH_RESULTS=8`.
+3. Flags: key with dots/underscores as dashes, e.g.
+   `--youtube-search-results 8`.
+
+`spotify-dl config settings` lists them all.
+
 ## CLI (`cmd/spotify-dl`)
 - `spotify-dl download <spotify-url>` — one-shot.
 - `spotify-dl watch` — daemon: polls `wl-paste` (Wayland — not xclip/xsel)
   every ~1s, detects a new Spotify URL, downloads automatically, fires
   `notify-send` with cover art on completion/failure.
-- Flags: `--format`, `--output`, `--bitrate`, `--jobs`, `--resolve-jobs`,
-  `--json`.
-- Config at `~/.config/spotify-dl/config.toml` (XDG base dir spec).
+- `spotify-dl config [--json]` — effective config (secrets redacted);
+  `config path [--json]`; `config settings [--json]` — every setting with
+  flag, env name, type, default, current value and help, for building a
+  settings UI.
+- `spotify-dl version`.
+- Common flags: `--config`, `--json`, `-v`, plus one flag per setting.

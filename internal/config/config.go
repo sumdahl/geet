@@ -1,3 +1,7 @@
+// Package config holds every engine setting. Each one can come from the TOML
+// file, a SPOTIFY_DL_* environment variable or a command-line flag (in
+// increasing precedence); see Settings for the single list all three derive
+// from.
 package config
 
 import (
@@ -6,42 +10,93 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/sumdahl/spotify-dl/internal/library"
 )
 
 var ErrInvalid = errors.New("invalid config")
 
-var formats = []string{"opus", "flac", "mp3"}
+var (
+	formats = []string{"opus", "flac", "mp3"}
+	bitrate = regexp.MustCompile(`^[1-9][0-9]*k$`)
+)
+
+type Config struct {
+	Output         string  `toml:"output" json:"output"`
+	OutputTemplate string  `toml:"output_template" json:"output_template"`
+	Format         string  `toml:"format" json:"format"`
+	Bitrate        string  `toml:"bitrate" json:"bitrate"`
+	Jobs           int     `toml:"jobs" json:"jobs"`
+	ResolveJobs    int     `toml:"resolve_jobs" json:"resolve_jobs"`
+	Spotify        Spotify `toml:"spotify" json:"spotify"`
+	YouTube        YouTube `toml:"youtube" json:"youtube"`
+	Tools          Tools   `toml:"tools" json:"tools"`
+}
 
 // Spotify credentials are optional: with none, metadata comes from Spotify's
 // public web pages, since the Web API needs a Premium account.
 type Spotify struct {
-	ClientID     string `toml:"client_id"`
-	ClientSecret string `toml:"client_secret"`
+	ClientID     string `toml:"client_id" json:"client_id"`
+	ClientSecret string `toml:"client_secret" json:"client_secret"`
 }
 
-type Config struct {
-	Spotify     Spotify `toml:"spotify"`
-	Output      string  `toml:"output"`
-	Format      string  `toml:"format"`
-	Bitrate     string  `toml:"bitrate"`
-	Jobs        int     `toml:"jobs"`
-	ResolveJobs int     `toml:"resolve_jobs"`
+type YouTube struct {
+	SearchQuery        string   `toml:"search_query" json:"search_query"`
+	SearchResults      int      `toml:"search_results" json:"search_results"`
+	MaxDurationDiff    Duration `toml:"max_duration_diff" json:"max_duration_diff"`
+	CookiesFile        string   `toml:"cookies_file" json:"cookies_file"`
+	CookiesFromBrowser string   `toml:"cookies_from_browser" json:"cookies_from_browser"`
+	ExtraArgs          []string `toml:"extra_args" json:"extra_args"`
+}
+
+type Tools struct {
+	YtDlp  string `toml:"yt_dlp" json:"yt_dlp"`
+	FFmpeg string `toml:"ffmpeg" json:"ffmpeg"`
+}
+
+// Duration reads and writes as a Go duration string ("10s") in both TOML and
+// JSON, where time.Duration alone would be an integer of nanoseconds.
+type Duration struct{ time.Duration }
+
+func (d Duration) MarshalText() ([]byte, error) { return []byte(d.String()), nil }
+
+func (d *Duration) UnmarshalText(b []byte) error {
+	v, err := time.ParseDuration(string(b))
+	if err != nil {
+		return err
+	}
+	d.Duration = v
+	return nil
 }
 
 func Default() Config {
 	return Config{
-		Output:      "~/Music",
-		Format:      "opus",
-		Jobs:        4,
-		ResolveJobs: 8,
+		Output:         "~/Music",
+		OutputTemplate: library.DefaultTemplate,
+		Format:         "opus",
+		Jobs:           4,
+		ResolveJobs:    8,
+		YouTube: YouTube{
+			SearchQuery:     "{artists} - {title}",
+			SearchResults:   5,
+			MaxDurationDiff: Duration{10 * time.Second},
+			ExtraArgs:       []string{},
+		},
+		Tools: Tools{YtDlp: "yt-dlp", FFmpeg: "ffmpeg"},
 	}
 }
 
+// DefaultPath is $SPOTIFY_DL_CONFIG if set, else the XDG config location.
 func DefaultPath() (string, error) {
+	if p := os.Getenv("SPOTIFY_DL_CONFIG"); p != "" {
+		return p, nil
+	}
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("locating config dir: %w", err)
@@ -49,20 +104,42 @@ func DefaultPath() (string, error) {
 	return filepath.Join(dir, "spotify-dl", "config.toml"), nil
 }
 
-// Load reads path over the defaults. A missing file is not an error; every
-// setting has a default.
-func Load(path string) (Config, error) {
+// Load layers defaults, the file at path (missing is fine), SPOTIFY_DL_*
+// environment variables and then flags, given as raw values keyed by
+// setting key.
+func Load(path string, flags map[string]string) (Config, error) {
 	cfg := Default()
-	if _, err := toml.DecodeFile(path, &cfg); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	md, err := toml.DecodeFile(path, &cfg)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
 		return Config{}, fmt.Errorf("reading %s: %w", path, err)
+	default:
+		if undec := md.Undecoded(); len(undec) > 0 {
+			return Config{}, fmt.Errorf("%s: %w: unknown key %q", path, ErrInvalid, undec[0].String())
+		}
 	}
-	out, err := ExpandHome(cfg.Output)
-	if err != nil {
-		return Config{}, err
+
+	for _, s := range cfg.Settings() {
+		if v, ok := os.LookupEnv(s.Env()); ok {
+			if err := s.Set(v); err != nil {
+				return Config{}, fmt.Errorf("%s: %w: %w", s.Env(), ErrInvalid, err)
+			}
+		}
+		if v, ok := flags[s.Key]; ok {
+			if err := s.Set(v); err != nil {
+				return Config{}, fmt.Errorf("--%s: %w: %w", s.Flag(), ErrInvalid, err)
+			}
+		}
 	}
-	cfg.Output = out
+
+	for _, p := range []*string{&cfg.Output, &cfg.YouTube.CookiesFile, &cfg.Tools.YtDlp, &cfg.Tools.FFmpeg} {
+		if *p, err = ExpandHome(*p); err != nil {
+			return Config{}, err
+		}
+	}
 	if err := cfg.Validate(); err != nil {
-		return Config{}, fmt.Errorf("%s: %w", path, err)
+		return Config{}, err
 	}
 	return cfg, nil
 }
@@ -76,8 +153,17 @@ func (c Config) Validate() error {
 	if (c.Spotify.ClientID == "") != (c.Spotify.ClientSecret == "") {
 		errs = append(errs, errors.New("set both spotify.client_id and spotify.client_secret, or neither"))
 	}
+	if c.Output == "" {
+		errs = append(errs, errors.New("output must not be empty"))
+	}
+	if err := library.ValidateTemplate(c.OutputTemplate); err != nil {
+		errs = append(errs, fmt.Errorf("output_template: %w", err))
+	}
 	if !slices.Contains(formats, c.Format) {
 		errs = append(errs, fmt.Errorf("format %q must be one of %s", c.Format, strings.Join(formats, ", ")))
+	}
+	if c.Bitrate != "" && !bitrate.MatchString(c.Bitrate) {
+		errs = append(errs, fmt.Errorf("bitrate %q must look like 320k, or be empty for best quality", c.Bitrate))
 	}
 	if c.Jobs < 1 {
 		errs = append(errs, fmt.Errorf("jobs must be at least 1, got %d", c.Jobs))
@@ -85,10 +171,33 @@ func (c Config) Validate() error {
 	if c.ResolveJobs < 1 {
 		errs = append(errs, fmt.Errorf("resolve_jobs must be at least 1, got %d", c.ResolveJobs))
 	}
+	if !strings.Contains(c.YouTube.SearchQuery, "{title}") {
+		errs = append(errs, errors.New("youtube.search_query must contain {title}"))
+	}
+	if c.YouTube.SearchResults < 1 || c.YouTube.SearchResults > 50 {
+		errs = append(errs, fmt.Errorf("youtube.search_results must be 1-50, got %d", c.YouTube.SearchResults))
+	}
+	if c.YouTube.MaxDurationDiff.Duration <= 0 {
+		errs = append(errs, errors.New("youtube.max_duration_diff must be positive"))
+	}
+	if c.YouTube.CookiesFile != "" && c.YouTube.CookiesFromBrowser != "" {
+		errs = append(errs, errors.New("set youtube.cookies_file or youtube.cookies_from_browser, not both"))
+	}
+	if c.Tools.YtDlp == "" || c.Tools.FFmpeg == "" {
+		errs = append(errs, errors.New("tools.yt_dlp and tools.ffmpeg must not be empty"))
+	}
 	if len(errs) > 0 {
 		return fmt.Errorf("%w: %w", ErrInvalid, errors.Join(errs...))
 	}
 	return nil
+}
+
+// Redacted returns a copy safe to print or hand to another process.
+func (c Config) Redacted() Config {
+	if c.Spotify.ClientSecret != "" {
+		c.Spotify.ClientSecret = "<redacted>"
+	}
+	return c
 }
 
 func ExpandHome(p string) (string, error) {
