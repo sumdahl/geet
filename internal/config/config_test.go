@@ -60,12 +60,13 @@ client_secret = "secret"
 		{
 			name:  "env beats file, flag beats env",
 			body:  "jobs = 2\nformat = \"flac\"\n",
-			env:   map[string]string{"SPOTIFY_DL_JOBS": "3", "SPOTIFY_DL_FORMAT": "mp3", "SPOTIFY_DL_YOUTUBE_SEARCH_RESULTS": "9"},
+			env:   map[string]string{"SPOTIFY_DL_JOBS": "3", "SPOTIFY_DL_FORMAT": "mp3", "SPOTIFY_DL_YOUTUBE_SEARCH_RESULTS": "9", "SPOTIFY_DL_OVERWRITE": "1"},
 			flags: map[string]string{"jobs": "5", "youtube.extra_args": "--proxy socks5://x"},
 			want: func(c *Config) {
 				c.Jobs = 5
 				c.Format = "mp3"
 				c.YouTube.SearchResults = 9
+				c.Overwrite = true
 				c.YouTube.ExtraArgs = []string{"--proxy", "socks5://x"}
 			},
 		},
@@ -73,6 +74,7 @@ client_secret = "secret"
 		{name: "half the credentials", body: "[spotify]\nclient_id = \"id\"\n", wantErr: ErrInvalid},
 		{name: "unknown format", body: "format = \"wav\"\n", wantErr: ErrInvalid},
 		{name: "bad bitrate", flags: map[string]string{"bitrate": "loud"}, wantErr: ErrInvalid},
+		{name: "bad bool from env", env: map[string]string{"SPOTIFY_DL_OVERWRITE": "sometimes"}, wantErr: ErrInvalid},
 		{name: "bad int from env", env: map[string]string{"SPOTIFY_DL_JOBS": "many"}, wantErr: ErrInvalid},
 		{name: "bad duration", flags: map[string]string{"youtube.max_duration_diff": "10"}, wantErr: ErrInvalid},
 		{name: "bad template", flags: map[string]string{"output_template": "{artist}/{album}"}, wantErr: ErrInvalid},

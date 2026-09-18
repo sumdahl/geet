@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sumdahl/spotify-dl/internal/spotify"
+	"github.com/sumdahl/spotify-dl/internal/ytdlp"
 )
 
 const maxDiff = 10 * time.Second
@@ -155,12 +156,10 @@ func TestSearchRunsYtDlp(t *testing.T) {
 	t.Setenv("FAKE_YTDLP_OUTPUT", fixture)
 
 	r := New(Options{
-		Binary:             bin,
-		SearchQuery:        "{artists} - {title} {album}",
-		SearchResults:      5,
-		MaxDurationDiff:    maxDiff,
-		CookiesFromBrowser: "firefox",
-		ExtraArgs:          []string{"--proxy", "socks5://127.0.0.1:9050"},
+		YtDlp:           ytdlp.Runner{Binary: bin, CookiesFromBrowser: "firefox", ExtraArgs: []string{"--proxy", "socks5://127.0.0.1:9050"}},
+		SearchQuery:     "{artists} - {title} {album}",
+		SearchResults:   5,
+		MaxDurationDiff: maxDiff,
 	})
 	track := spotify.Track{Title: "Ancestral", Artists: []string{"Steven Wilson"}, Album: "Hand Cannot Erase", Duration: 810 * time.Second}
 	best, all, err := r.Resolve(context.Background(), track)
@@ -177,9 +176,9 @@ func TestSearchRunsYtDlp(t *testing.T) {
 	}
 	gotArgs := strings.Split(strings.TrimSpace(string(raw)), "\n")
 	wantArgs := []string{
-		"--flat-playlist", "--dump-json", "--no-warnings", "--no-progress",
 		"--cookies-from-browser", "firefox",
 		"--proxy", "socks5://127.0.0.1:9050",
+		"--flat-playlist", "--dump-json", "--no-warnings", "--no-progress",
 		"ytsearch5:Steven Wilson - Ancestral Hand Cannot Erase",
 	}
 	if !reflect.DeepEqual(gotArgs, wantArgs) {
@@ -189,9 +188,9 @@ func TestSearchRunsYtDlp(t *testing.T) {
 
 func TestSearchErrors(t *testing.T) {
 	t.Run("missing binary", func(t *testing.T) {
-		r := New(Options{Binary: "definitely-not-yt-dlp", SearchQuery: "{title}", SearchResults: 1})
+		r := New(Options{YtDlp: ytdlp.Runner{Binary: "definitely-not-yt-dlp"}, SearchQuery: "{title}", SearchResults: 1})
 		_, err := r.Search(context.Background(), "x")
-		if !errors.Is(err, ErrToolMissing) {
+		if !errors.Is(err, ytdlp.ErrToolMissing) {
 			t.Fatalf("err = %v, want ErrToolMissing", err)
 		}
 	})
@@ -199,7 +198,7 @@ func TestSearchErrors(t *testing.T) {
 		bin, _ := filepath.Abs("testdata/fake-yt-dlp")
 		t.Setenv("FAKE_YTDLP_ARGS", filepath.Join(t.TempDir(), "args"))
 		t.Setenv("FAKE_YTDLP_FAIL", "1")
-		r := New(Options{Binary: bin, SearchQuery: "{title}", SearchResults: 1})
+		r := New(Options{YtDlp: ytdlp.Runner{Binary: bin}, SearchQuery: "{title}", SearchResults: 1})
 		_, err := r.Search(context.Background(), "x")
 		if err == nil || !strings.Contains(err.Error(), "not a bot") {
 			t.Fatalf("err = %v, want yt-dlp's stderr in it", err)

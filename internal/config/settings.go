@@ -25,6 +25,7 @@ func (c *Config) Settings() []Setting {
 		{Key: "output_template", Usage: "file path under output, without extension; placeholders: " + libraryPlaceholders(), ptr: &c.OutputTemplate},
 		{Key: "format", Usage: "audio format: opus, flac or mp3", ptr: &c.Format},
 		{Key: "bitrate", Usage: `audio bitrate such as 320k; empty means best available`, ptr: &c.Bitrate},
+		{Key: "overwrite", Usage: "re-download tracks whose file already exists instead of skipping them", ptr: &c.Overwrite},
 		{Key: "jobs", Usage: "concurrent downloads", ptr: &c.Jobs},
 		{Key: "resolve_jobs", Usage: "concurrent YouTube lookups", ptr: &c.ResolveJobs},
 		{Key: "spotify.client_id", Usage: "Spotify Web API client ID (optional; needs Premium)", ptr: &c.Spotify.ClientID},
@@ -52,6 +53,12 @@ func (s Setting) Set(raw string) error {
 	switch p := s.ptr.(type) {
 	case *string:
 		*p = raw
+	case *bool:
+		v, err := strconv.ParseBool(strings.TrimSpace(raw))
+		if err != nil {
+			return fmt.Errorf("%s: %q is not true or false", s.Key, raw)
+		}
+		*p = v
 	case *int:
 		v, err := strconv.Atoi(strings.TrimSpace(raw))
 		if err != nil {
@@ -73,6 +80,8 @@ func (s Setting) Set(raw string) error {
 // Type names the value's kind for tools that build a settings UI.
 func (s Setting) Type() string {
 	switch s.ptr.(type) {
+	case *bool:
+		return "bool"
 	case *int:
 		return "int"
 	case *Duration:
@@ -88,6 +97,8 @@ func (s Setting) String() string {
 	switch p := s.ptr.(type) {
 	case *string:
 		return *p
+	case *bool:
+		return strconv.FormatBool(*p)
 	case *int:
 		return strconv.Itoa(*p)
 	case *Duration:

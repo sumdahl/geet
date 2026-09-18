@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"text/tabwriter"
 
@@ -19,7 +18,6 @@ import (
 	"github.com/sumdahl/spotify-dl/internal/config"
 	"github.com/sumdahl/spotify-dl/internal/deezer"
 	"github.com/sumdahl/spotify-dl/internal/spotify"
-	"github.com/sumdahl/spotify-dl/internal/youtube"
 )
 
 const (
@@ -60,7 +58,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	switch args[0] {
 	case "download":
-		return download(ctx, args[1:], stderr)
+		return downloadCmd(ctx, args[1:], stdout, stderr)
 	case "config":
 		return configCmd(args[1:], stdout, stderr)
 	case "watch":
@@ -104,10 +102,15 @@ func newCLI(name, synopsis string, stderr io.Writer) *cli {
 		if d := s.String(); d != "" {
 			usage += fmt.Sprintf(" (default %q)", d)
 		}
-		c.fs.Func(s.Flag(), usage, func(v string) error {
+		set := func(v string) error {
 			c.overrides[s.Key] = v
 			return nil
-		})
+		}
+		if s.Type() == "bool" {
+			c.fs.BoolFunc(s.Flag(), usage, set) // --overwrite, --overwrite=false
+		} else {
+			c.fs.Func(s.Flag(), usage, set)
+		}
 	}
 	return c
 }
@@ -148,77 +151,6 @@ func setupLogging(w io.Writer, verbose bool) {
 		level = slog.LevelDebug
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level})))
-}
-
-func download(ctx context.Context, args []string, stderr io.Writer) int {
-	c := newCLI("download", "download [flags] <spotify-url>", stderr)
-	positional, err := c.parse(args)
-	if errors.Is(err, flag.ErrHelp) {
-		return exitOK
-	}
-	if err != nil {
-		return exitFatal
-	}
-	if len(positional) != 1 {
-		c.fs.Usage()
-		return exitFatal
-	}
-	setupLogging(stderr, c.verbose)
-
-	cfg, _, err := c.load()
-	if err != nil {
-		fmt.Fprintf(stderr, "spotify-dl: %v\n", err)
-		return exitFatal
-	}
-	ref, err := spotify.ParseURL(positional[0])
-	if err != nil {
-		fmt.Fprintf(stderr, "spotify-dl: %v\n", err)
-		return exitFatal
-	}
-
-	tracks, err := resolveMetadata(ctx, cfg, ref)
-	if err != nil {
-		fmt.Fprintf(stderr, "spotify-dl: %v\n", err)
-		return exitFatal
-	}
-	fmt.Fprintf(stderr, "%s %s: %d track(s)\n", ref.Kind, ref.ID, len(tracks))
-
-	yt := youtube.New(youtube.Options{
-		Binary:             cfg.Tools.YtDlp,
-		SearchQuery:        cfg.YouTube.SearchQuery,
-		SearchResults:      cfg.YouTube.SearchResults,
-		MaxDurationDiff:    cfg.YouTube.MaxDurationDiff.Duration,
-		CookiesFile:        cfg.YouTube.CookiesFile,
-		CookiesFromBrowser: cfg.YouTube.CookiesFromBrowser,
-		ExtraArgs:          cfg.YouTube.ExtraArgs,
-	})
-	failed := 0
-	for i, t := range tracks {
-		fmt.Fprintf(stderr, "%3d. %s – %s (%s #%d-%d, %d, %d:%02d, %s)\n",
-			i+1, strings.Join(t.Artists, ", "), t.Title, t.Album, t.DiscNumber, t.TrackNumber, t.Year,
-			int(t.Duration.Minutes()), int(t.Duration.Seconds())%60, orDash(t.ISRC))
-
-		best, _, err := yt.Resolve(ctx, t)
-		switch {
-		case ctx.Err() != nil:
-			return exitFatal
-		case errors.Is(err, youtube.ErrToolMissing):
-			fmt.Fprintf(stderr, "spotify-dl: %v\n", err)
-			return exitFatal
-		case err != nil:
-			failed++
-			fmt.Fprintf(stderr, "     ✗ %v\n", err)
-		default:
-			fmt.Fprintf(stderr, "     → %s  %q by %s (score %.0f, %d:%02d)\n",
-				best.URL, best.Title, best.Channel, best.Score,
-				int(best.Duration.Minutes()), int(best.Duration.Seconds())%60)
-		}
-	}
-	fmt.Fprintln(stderr, "(matching only: downloading is not implemented yet)")
-	if failed > 0 {
-		return exitPartial
-	}
-	return exitOK
 }
 
 // resolveMetadata uses the official API when credentials are configured.
@@ -342,11 +274,4 @@ func writeJSON(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
-}
-
-func orDash(s string) string {
-	if s == "" {
-		return "-"
-	}
-	return s
 }

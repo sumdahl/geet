@@ -43,19 +43,29 @@ it can't be the only path. Two sources, chosen by config:
   search picks wrong.
 
 ## 3. Downloader (`internal/download`)
-- `yt-dlp -f bestaudio --extract-audio --audio-format {opus|flac|mp3}
-  --audio-quality 0` into a tmp path. Format/bitrate configurable.
-- See `02-concurrency-pipeline.md` for how this stage is scheduled across a
-  playlist.
+- `yt-dlp --format "bestaudio[acodec=opus]/bestaudio"` into a work dir,
+  printing the file path, codec and bitrate. No `--extract-audio`: yt-dlp's
+  conversion silently ignores the requested bitrate when the source codec
+  already matches (asked for 96k opus, got the 152k source copied).
+- YouTube's best audio is ~150 kbps Opus (format 251), ~130k AAC otherwise;
+  YouTube Premium cookies can unlock 256k AAC.
 
-## 4. Tagger (`internal/tag`)
-- Fetch Spotify's album art (prefer 640x640) into memory.
-- ID3v2 for mp3 (`github.com/bogem/id3v2`); Vorbis comments for flac/opus
-  (`go-flac`/`flacvorbis`, or fall back to `ffmpeg -metadata ...
-  -c:v mjpeg -disposition:v attached_pic` for cover art so it works across
-  formats).
-- Fields: title, artist, album artist, album, track/disc number, date,
-  ISRC (TXXX), embedded cover.
+## 4. Encode + tag (`internal/audio`)
+One ffmpeg pass per track: convert, tag, embed cover.
+- opus, no bitrate, Opus source → stream copy (no quality loss); otherwise
+  libopus at the bitrate (160k default). mp3 → libmp3lame at the bitrate,
+  or VBR V0 without one. flac → flac.
+- Tags come from an FFMETADATA file (an opus cover as base64 is ~150 KB,
+  over Linux's 128 KB per-argument limit): title, artist, album_artist,
+  album, track, disc, date, ISRC (ID3 `TSRC` for mp3), and the Spotify URL
+  as comment.
+- Cover: mp3/flac as an attached picture stream (ID3v2.3 APIC / FLAC
+  PICTURE); opus as a `METADATA_BLOCK_PICTURE` tag.
+- `QualityWarning`: FLAC, or a bitrate >10% above the source, gets a
+  warning (once per run on stderr, per track in NDJSON).
+- The file is encoded in a hidden `.spotify-dl-*` work dir inside `output`
+  and renamed into place, so a finished file appears atomically and Ctrl+C
+  leaves nothing behind. Existing files are skipped unless `overwrite`.
 
 ## Output path (`internal/library`)
 - `output` (default `~/Music`) + `output_template` (default

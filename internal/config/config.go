@@ -32,6 +32,7 @@ type Config struct {
 	OutputTemplate string  `toml:"output_template" json:"output_template"`
 	Format         string  `toml:"format" json:"format"`
 	Bitrate        string  `toml:"bitrate" json:"bitrate"`
+	Overwrite      bool    `toml:"overwrite" json:"overwrite"`
 	Jobs           int     `toml:"jobs" json:"jobs"`
 	ResolveJobs    int     `toml:"resolve_jobs" json:"resolve_jobs"`
 	Spotify        Spotify `toml:"spotify" json:"spotify"`

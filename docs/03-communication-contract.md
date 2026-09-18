@@ -8,8 +8,29 @@ as a stable API even before the plugin exists.
   goes to stdout. Human-readable progress/logs go to stderr only, so the
   two never mix.
 - `spotify-dl download <url> --json` → one NDJSON line per track as it
-  crosses each pipeline stage:
-  `{"track":"...","stage":"resolved|downloading|tagging|done|failed","error":"..."}`
+  crosses each stage: `resolved → downloading → tagging → done`, or
+  `failed` at any point. A track whose file already exists goes straight to
+  `done` with `"skipped": true` (unless `--overwrite`).
+  ```json
+  {"track":"Gunna - fukumean","stage":"done","spotify_id":"4rXLjWdF2ZZpXCVTfWcshS",
+   "index":1,"total":18,"youtube_url":"https://www.youtube.com/watch?v=l21wGxlWwPw",
+   "path":"/home/u/Music/Gunna/fukumean - Gunna.opus",
+   "warning":"320k requested but YouTube's source is 152k Opus: the file will be bigger, not better"}
+  ```
+  | field | when |
+  |---|---|
+  | `track` | always ("Artists - Title"); empty on a fatal event |
+  | `stage` | always: `resolved`, `downloading`, `tagging`, `done`, `failed` |
+  | `error` | `failed` only |
+  | `fatal` | `true` when the whole run stopped (bad URL, missing tool, Ctrl+C); exit code is then 2 |
+  | `spotify_id`, `index` (1-based), `total` | every per-track event |
+  | `path` | every per-track event: where the file is/will be |
+  | `youtube_url` | from `resolved` on |
+  | `skipped` | `done` for an existing file |
+  | `warning` | `done`, when the requested format/bitrate can't beat YouTube's source (FLAC, or a bitrate >10% above it) |
+
+  Fields are only ever added, never renamed or removed; consumers must
+  ignore unknown fields. Absent optional fields mean false/empty.
 - Exit codes:
   - `0` — all tracks succeeded
   - `1` — partial failure (some tracks failed; check the NDJSON for which)

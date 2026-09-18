@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-Deliverables 1 and 2 are done. `cmd/spotify-dl download` resolves metadata and the YouTube match for each track but doesn't download yet, and `watch` is a stub. The docs in `docs/` are the spec, so read the relevant one before implementing a component. `docs/00-overview.md` indexes them.
+Deliverables 1–3 are done: `download` works end to end (match, download, convert, tag, embed cover), one track at a time. `watch` is a stub. **Per the roadmap, the user uses the engine by hand now, before deliverable 4 (concurrency) starts.** The docs in `docs/` are the spec, so read the relevant one before implementing a component. `docs/00-overview.md` indexes them.
 
 ## Metadata sources
 
@@ -43,8 +43,10 @@ A Go CLI that takes a Spotify track, album or playlist URL, gets its metadata (s
   - `testdata/fake-yt-dlp` stands in for the binary in tests.
 - `internal/library`: output path = `output` + `output_template` + extension. Each template segment is exactly one path component, sanitized.
 - `internal/textnorm`: shared title/name normalization. It keeps Unicode marks so Devanagari words don't split apart.
-- `internal/download`: `yt-dlp -f bestaudio --extract-audio --audio-format {opus|flac|mp3} --audio-quality 0` into a temp path.
-- `internal/tag`: ID3v2 for mp3 (`bogem/id3v2`) and Vorbis comments for flac/opus. `ffmpeg -metadata … -disposition:v attached_pic` is the cross-format fallback for cover art. ISRC goes in TXXX.
+- `internal/ytdlp`: the shared yt-dlp runner (cookies and extra args), used by both search and download.
+- `internal/download`: fetches the raw best audio only. It deliberately avoids `--extract-audio`, which ignores the requested bitrate when the codecs match.
+- `internal/audio`: one ffmpeg pass that converts or copies, tags and embeds the cover (see docs/01 §4 for the opus cover and argument-length details). Its round-trip tests run real ffmpeg on a generated tone and skip when ffmpeg is missing.
+- `cmd/spotify-dl/download.go`: the per-track stages and the NDJSON `event` type. Only ever add event fields; docs/03 has the schema.
 - `cmd/spotify-dl`: the subcommands `download <url>` and `watch`. `watch` is a daemon that polls `wl-paste` (Wayland, not xclip) about once a second and sends a `notify-send` notification with the cover art. Flags: `--format --output --bitrate --jobs --resolve-jobs --json`.
 
 ## Playlist pipeline

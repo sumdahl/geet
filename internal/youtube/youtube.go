@@ -13,28 +13,22 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/sumdahl/spotify-dl/internal/spotify"
+	"github.com/sumdahl/spotify-dl/internal/ytdlp"
 )
 
-var (
-	ErrNoMatch     = errors.New("no YouTube result matched")
-	ErrToolMissing = errors.New("yt-dlp not found")
-)
+var ErrNoMatch = errors.New("no YouTube result matched")
 
 type Options struct {
-	Binary             string // yt-dlp executable
-	SearchQuery        string // with {artists} {artist} {title} {album} placeholders
-	SearchResults      int
-	MaxDurationDiff    time.Duration
-	CookiesFile        string
-	CookiesFromBrowser string
-	ExtraArgs          []string
+	YtDlp           ytdlp.Runner
+	SearchQuery     string // with {artists} {artist} {title} {album} placeholders
+	SearchResults   int
+	MaxDurationDiff time.Duration
 }
 
 type Candidate struct {
@@ -103,34 +97,12 @@ func (r *Resolver) Search(ctx context.Context, query string) ([]Candidate, error
 	// --flat-playlist reads the result list without opening each video: about
 	// 1.5s instead of several seconds per result, and it still carries the
 	// title, channel, duration and view count scoring needs.
-	args := []string{"--flat-playlist", "--dump-json", "--no-warnings", "--no-progress"}
-	args = append(args, r.cookieArgs()...)
-	args = append(args, r.opts.ExtraArgs...)
-	args = append(args, "ytsearch"+strconv.Itoa(r.opts.SearchResults)+":"+query)
-
-	var stdout, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, r.opts.Binary, args...)
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil {
-		if errors.Is(err, exec.ErrNotFound) {
-			return nil, fmt.Errorf("%w: %q (install yt-dlp or set tools.yt_dlp)", ErrToolMissing, r.opts.Binary)
-		}
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		return nil, fmt.Errorf("yt-dlp search %q: %w: %s", query, err, lastLine(stderr.String()))
+	out, err := r.opts.YtDlp.Run(ctx, "--flat-playlist", "--dump-json", "--no-warnings", "--no-progress",
+		"ytsearch"+strconv.Itoa(r.opts.SearchResults)+":"+query)
+	if err != nil {
+		return nil, fmt.Errorf("searching %q: %w", query, err)
 	}
-	return parseCandidates(&stdout)
-}
-
-func (r *Resolver) cookieArgs() []string {
-	switch {
-	case r.opts.CookiesFile != "":
-		return []string{"--cookies", r.opts.CookiesFile}
-	case r.opts.CookiesFromBrowser != "":
-		return []string{"--cookies-from-browser", r.opts.CookiesFromBrowser}
-	}
-	return nil
+	return parseCandidates(bytes.NewReader(out))
 }
 
 func parseCandidates(r io.Reader) ([]Candidate, error) {
@@ -175,12 +147,4 @@ func parseCandidates(r io.Reader) ([]Candidate, error) {
 		out = append(out, c)
 	}
 	return out, sc.Err()
-}
-
-func lastLine(s string) string {
-	s = strings.TrimSpace(s)
-	if i := strings.LastIndexByte(s, '\n'); i >= 0 {
-		return s[i+1:]
-	}
-	return s
 }
