@@ -19,7 +19,7 @@ var VariantWords = []string{
 	"demo", "sped up", "slowed", "reverb", "nightcore", "8d", "extended",
 	"mashup", "parody", "reaction", "tutorial", "lesson", "isolated", "solo",
 	"1 hour", "loop", "bass boosted", "tribute", "lullaby", "rendition",
-	"8 bit", "lofi", "lo fi", "jersey club", "chopped", "screwed",
+	"8 bit", "lofi", "lo fi", "jersey club", "chopped", "screwed", "type beat",
 }
 
 // Variants returns the VariantWords in title that aren't also in reference.

@@ -6,10 +6,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/sumdahl/geet/internal/config"
+	"github.com/sumdahl/geet/internal/deezer"
 	"github.com/sumdahl/geet/internal/itunes"
 	"github.com/sumdahl/geet/internal/spotify"
 )
@@ -32,6 +35,7 @@ type searchResult struct {
 	CoverURL    string   `json:"cover_url"`
 	URL         string   `json:"url"`
 	Clean       bool     `json:"clean,omitempty"`
+	Explicit    bool     `json:"explicit,omitempty"`
 	Editions    int      `json:"editions"`
 	Label       string   `json:"label"` // the picker's one-line description
 }
@@ -73,7 +77,7 @@ func searchCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int
 			out[i] = searchResult{
 				Index: i + 1, Ref: r.ID, Title: r.Title, Artists: r.Artists, Album: r.Album,
 				AlbumArtist: r.AlbumArtist, Year: r.Year, DurationMS: r.Duration.Milliseconds(),
-				CoverURL: r.CoverURL, URL: r.URL(), Clean: r.Clean, Editions: r.Editions, Label: resultLabel(r),
+				CoverURL: r.CoverURL, URL: r.URL(), Clean: r.Clean, Explicit: r.Explicit, Editions: r.Editions, Label: resultLabel(r),
 			}
 		}
 		if err := writeJSON(stdout, out); err != nil {
@@ -130,6 +134,18 @@ func searchCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	for i, p := range picked {
 		tracks[i] = results[p].Track
 	}
+	// A Deezer search result names only the main artist and has no year or
+	// ISRC; its full entry has them.
+	dz := deezer.New("")
+	for i, t := range tracks {
+		if id, ok := strings.CutPrefix(t.ID, deezer.RefPrefix); ok {
+			if full, err := dz.Lookup(ctx, id); err == nil {
+				tracks[i] = full
+			} else {
+				slog.WarnContext(ctx, "couldn't read the song's full details from Deezer", "track", t.Title, "err", err)
+			}
+		}
+	}
 	rep.setUI(chooseUI(cfg.Progress, stderr, c.json))
 	setupLogging(rep.ui.writer(), c.verbose)
 	col := spotify.Collection{Ref: spotify.Ref{Kind: kindSearch}, Name: query, Tracks: tracks}
@@ -137,13 +153,28 @@ func searchCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	return rep.exit(c, res, err, stderr)
 }
 
-// searchCatalog searches iTunes and returns the best results, ranked and
-// with album editions merged, capped at search.limit.
+// searchCatalog searches the Apple and Deezer catalogs at once and returns
+// the best results, ranked, with album editions and the same song from
+// both catalogs merged, capped at search.limit. Both are needed: Apple often
+// has an explicit song only as its clean edit ("umean" for "fukumean"),
+// while Deezer has the explicit original ("Tonight (I'm Fuckin' You)") but,
+// being region-filtered, misses some major-label songs. If one catalog
+// fails, the other's results still come back.
 func searchCatalog(ctx context.Context, cfg config.Config, query string) ([]itunes.Result, error) {
-	tracks, err := itunes.New("", cfg.Search.Country).Search(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("searching %q: %w", query, err)
+	var apple, dz []spotify.Track
+	var appleErr, dzErr error
+	var wg sync.WaitGroup
+	wg.Go(func() { apple, appleErr = itunes.New("", cfg.Search.Country).Search(ctx, query) })
+	wg.Go(func() { dz, dzErr = deezer.New("").Search(ctx, query) })
+	wg.Wait()
+	switch {
+	case appleErr != nil && dzErr != nil:
+		return nil, fmt.Errorf("searching %q: %w", query, errors.Join(appleErr, dzErr))
+	case appleErr != nil:
+		slog.WarnContext(ctx, "the Apple catalog didn't answer; showing Deezer's results only", "err", appleErr)
+	case dzErr != nil:
+		slog.WarnContext(ctx, "Deezer didn't answer; showing the Apple catalog's results only", "err", dzErr)
 	}
-	results := itunes.Rank(query, tracks)
+	results := itunes.Rank(query, append(apple, dz...))
 	return results[:min(len(results), cfg.Search.Limit)], nil
 }

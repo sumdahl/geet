@@ -199,12 +199,26 @@ Selected:
 Download 1 song? [Y/n]
 ```
 
-- Songs come from the iTunes catalog: no key, any country's store (`search.country`, default `US`), and Nepali and other regional music included.
-- The raw catalog order puts covers above originals, so geet merges album editions of the same recording and re-ranks. Covers, remixes, instrumentals, slowed and lullaby versions sink, and the original (listed on the most editions) rises.
+- **Both versions of explicit songs are listed, explicit first:**
+  ```
+  $ geet search enrique iglesias tonight
+    1  Tonight (I'm Fuckin' You) — Enrique Iglesias · Euphoria 3:54 [E]
+    2  Tonight (I'm Lovin' You) [feat. Ludacris & DJ Frank E] — Enrique Iglesias · Euphoria (Collector's Edition) (2010) 3:51
+  ```
+  `[E]` marks the explicit version, `(clean)` a clean edit. When a song's clean edit would rank higher (it's on more albums), the explicit original is moved above it.
+- **Songs come from two keyless catalogs at once,** because each lacks what the other has:
+  - **Apple** (any country's store, `search.country`, default `US`) often lists an explicit song only as its clean edit.
+  - **Deezer** lists explicit originals, but its search is region-filtered (from Nepal it hides some major-label songs).
+
+  The same song from both is shown once, and if one catalog doesn't answer, the other's results still come. Nepali and other regional music is included.
+- The raw catalog order puts covers above originals, so geet merges album editions of the same recording and re-ranks:
+  - Covers, remixes, instrumentals, karaoke, type beats, slowed and lullaby versions sink.
+  - The original (listed on the most editions) rises.
+  - A result by an artist you named ranks above other artists' uploads that only mention them in the title ("Fukumean Gunna" by someone else).
 - The menu is [fzf](https://github.com/junegunn/fzf), which ships with Omarchy: type to filter (`weeknd` narrows to that artist), Tab to pick several songs, which then download in parallel. Without fzf you get a numbered list (`1`, `1 3` or `2-4`).
 - Before downloading, geet lists your picks and asks `Download N songs? [Y/n]`, so a stray Enter never starts a download. Skip the question with `-y` / `--yes`, or set `search.confirm = false`. `--pick` never asks.
 - To get a specific artist's version, add the artist to the search: `geet search blinding lights weeknd`.
-- Scripting: `geet search <words> --pick 1` chooses without a menu, and `geet search <words> --json` lists results (each with a `ref`) without downloading. `geet download itunes:<id>` and Apple Music song links download directly.
+- Scripting: `geet search <words> --pick 1` chooses without a menu, and `geet search <words> --json` lists results (each with a `ref`, and `"explicit": true` or `"clean": true`) without downloading. `geet download itunes:<id>` / `deezer:<id>`, Apple Music song links and Deezer track links download directly.
 - Limits:
   - Apple's public catalog lists some explicit songs only as clean edits, whose titles are censored too ("umean" for Gunna's "fukumean"). These are marked `(clean)`, and matching still finds the right upload.
   - A few labels' catalogs aren't searchable from some regions. For those, use the Spotify link.

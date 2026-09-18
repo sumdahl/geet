@@ -124,6 +124,10 @@ func TestResultLabel(t *testing.T) {
 	if got, want := resultLabel(r), "Blinding Lights — The Weeknd (2019) 3:20 (clean)"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
+	r.Clean, r.Explicit = false, true
+	if got, want := resultLabel(r), "Blinding Lights — The Weeknd (2019) 3:20 [E]"; got != want {
+		t.Errorf("explicit: got %q, want %q", got, want)
+	}
 }
 
 func TestConfirmDownload(t *testing.T) {

@@ -70,7 +70,10 @@ Linux is the target and macOS is best effort, where everything but `watch` (Wayl
   - It keeps every copy of a recording (ISRC maps to a list of keys).
   - `Lookup` prefers a copy on the destination's filesystem, because only that can be hard-linked.
   - It relies on the comment tag holding the Spotify track URL, which `internal/audio` writes. The first-run `Scan` finds old downloads that way, so never drop that tag.
-- `internal/itunes` and `cmd/geet/search.go`/`pick.go`: `geet search`, which uses the keyless iTunes catalog, then ranks, picks with fzf or a numbered list, and runs the same pipeline.
+- `internal/itunes`, `internal/deezer` (`catalog.go`) and `cmd/geet/search.go`/`pick.go`: `geet search`. It queries the keyless Apple and Deezer catalogs in parallel (`searchCatalog`), ranks them together (`itunes.Rank`), picks with fzf or a numbered list, and runs the same pipeline.
+  - Apple often has an explicit song only as its clean edit; Deezer has explicit originals but is region-filtered. `Rank` merges the same song from both (title minus "feat.", primary artist, ±2 s) but never a clean edit with its explicit original, and `explicitFirst` puts an explicit song above its own clean edit.
+  - A picked Deezer result is re-read with `deezer.Lookup`, because search results lack featured artists, year and ISRC.
+  - Deezer refs are `deezer:<id>`, parsed by `deezer.ParseRef` alongside Apple's `itunes:<id>`.
   - Raw iTunes order is unusable: covers come before originals, and each album edition repeats. `Rank` merges editions and uses the edition count as popularity.
   - Search downloads carry the Apple Music URL in the comment tag, and the index maps it to `itunes:<id>`.
   - Fixtures in `internal/itunes/testdata` are real catalog responses.

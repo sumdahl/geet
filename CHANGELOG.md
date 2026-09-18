@@ -8,6 +8,17 @@ still change the CLI, the configuration or the `--json` output.
 ## [Unreleased]
 
 ### Added
+- `geet search` lists both versions of explicit songs, explicit first:
+  `[E]` marks the explicit version, `(clean)` the clean edit, and `--json`
+  has `"explicit": true`. Results come from the Apple and Deezer catalogs at
+  once. Apple often has an explicit song only as its clean edit, while
+  Deezer has the explicit original ("Tonight (I'm Fuckin' You)" is only on
+  Deezer). The same song from both is merged, and an explicit song is
+  moved above its own clean edit. A result by an artist the query names now
+  ranks above other artists' look-alike uploads, and type beats count as
+  variants.
+- Deezer links and `deezer:<id>` refs download like Apple Music ones, in
+  `download`, `--tracks` and `watch`.
 - Explicit songs download as the explicit version by default, and the clean
   edit is only a fallback. geet reads Spotify's (and Apple's) explicit
   flag, and uploads marked clean, radio edit or censored score lower. When

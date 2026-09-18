@@ -175,7 +175,10 @@ func resultLabel(r itunes.Result) string {
 		fmt.Fprintf(&b, " (%d)", r.Year)
 	}
 	fmt.Fprintf(&b, " %d:%02d", int(r.Duration.Minutes()), int(r.Duration.Seconds())%60)
-	if r.Clean {
+	switch {
+	case r.Explicit:
+		b.WriteString(" [E]")
+	case r.Clean:
 		b.WriteString(" (clean)")
 	}
 	return b.String()
