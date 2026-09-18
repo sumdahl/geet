@@ -281,8 +281,16 @@ func printSettings(w io.Writer, cfg config.Config, asJSON bool) error {
 	return tw.Flush()
 }
 
-func writeJSON(w io.Writer, v any) error {
+// newJSONEncoder writes JSON as consumers read it: URLs keep a literal "&"
+// instead of the HTML-safe "\u0026" escape Go uses by default.
+func newJSONEncoder(w io.Writer) *json.Encoder {
 	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	return enc
+}
+
+func writeJSON(w io.Writer, v any) error {
+	enc := newJSONEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
 }

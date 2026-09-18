@@ -177,7 +177,7 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 func prepare(c *cli, stdout, stderr io.Writer) (*reporter, config.Config, error) {
 	rep := &reporter{ui: &plainUI{w: stderr}, warned: map[string]bool{}}
 	if c.json {
-		rep.json = json.NewEncoder(stdout)
+		rep.json = newJSONEncoder(stdout)
 	}
 	setupLogging(stderr, c.verbose)
 
