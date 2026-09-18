@@ -7,6 +7,8 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-18
+
 ### Added
 - `geet search` lists both versions of explicit songs, explicit first:
   `[E]` marks the explicit version, `(clean)` the clean edit, and `--json`
@@ -197,7 +199,8 @@ First release.
   YouTube. Ctrl+C leaves no partial files, and re-running resumes.
 - `geet version` shows the release, commit and date.
 
-[Unreleased]: https://github.com/sumdahl/geet/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/sumdahl/geet/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/sumdahl/geet/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/sumdahl/geet/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/sumdahl/geet/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/sumdahl/geet/releases/tag/v0.1.0
