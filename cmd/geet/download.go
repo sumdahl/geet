@@ -437,7 +437,7 @@ func runDownload(ctx context.Context, cfg config.Config, rep *reporter, col spot
 	for i, t := range tracks {
 		jobs[i] = &trackJob{t: t, ev: event{Track: trackName(t), SpotifyID: t.ID, Index: i + 1, Total: len(tracks)}}
 	}
-	botChecked := false
+	botChecked, ageChecked := false, false
 	err = pipeline.Run(ctx, jobs, []pipeline.Stage[*trackJob]{
 		{Name: "resolve", Workers: cfg.ResolveJobs, Do: d.resolve},
 		{Name: "download", Workers: cfg.Jobs, Do: d.download},
@@ -458,6 +458,10 @@ func runDownload(ctx context.Context, cfg config.Config, rep *reporter, col spot
 		if errors.Is(err, ytdlp.ErrBotCheck) && !botChecked {
 			botChecked = true
 			rep.notice(ytdlp.BotCheckAdvice(cfg.YouTube.CookiesFromBrowser, err))
+		}
+		if errors.Is(err, ytdlp.ErrAgeRestricted) && !ageChecked {
+			ageChecked = true
+			rep.notice(ytdlp.AgeRestrictedAdvice(err))
 		}
 	})
 	if ctx.Err() != nil {
@@ -504,6 +508,7 @@ func newDownloader(cfg config.Config, root string, rep *reporter, idx *index.Ind
 			FallbackQuery:   cfg.YouTube.FallbackQuery,
 			SearchResults:   cfg.YouTube.SearchResults,
 			MaxDurationDiff: cfg.YouTube.MaxDurationDiff.Duration,
+			MusicFallback:   cfg.YouTube.MusicFallback,
 		}),
 	}
 }
@@ -700,7 +705,7 @@ func (d *downloader) fetch(ctx context.Context, url, work string, tu trackUI, ev
 				d.rep.emit(tu, e)
 			}
 		})
-		if err == nil || ctx.Err() != nil || errors.Is(err, ytdlp.ErrToolMissing) || errors.Is(err, ytdlp.ErrBotCheck) {
+		if err == nil || ctx.Err() != nil || errors.Is(err, ytdlp.ErrToolMissing) || errors.Is(err, ytdlp.ErrBotCheck) || errors.Is(err, ytdlp.ErrAgeRestricted) {
 			return src, err
 		}
 		if attempt >= d.cfg.DownloadRetries {

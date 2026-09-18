@@ -27,6 +27,18 @@ still change the CLI, the configuration or the `--json` output.
   now says what it controls.
 
 ### Fixed
+- Songs YouTube search can't match are now looked up on YouTube Music's
+  songs (`youtube.music_fallback`, on by default), which lists the official
+  studio audio at the album's exact length. Bartika Eam Rai's "Kaalpanik /
+  Maayajastai" failed before: regular search found only the music video (21
+  s of intro too long), a live session and uploads spelling it
+  "MaayaaJastai"; YouTube Music has it on the artist's Topic channel at
+  exactly 273 s. It costs about 4 s, only for songs that didn't match.
+- An age-restricted video ("Sign in to confirm your age") is reported as
+  such, once, with the fix, instead of being retried three times and ending
+  in yt-dlp's cut-off message. Signed in with an account that isn't
+  age-verified, YouTube offers only low-quality video, and geet says that
+  too.
 - Songs whose official upload names the artist only in a run-together
   channel name, or writes the title with different spacing, no longer fail
   with "no YouTube result matched". A$AP Rocky's "1Train" failed on both

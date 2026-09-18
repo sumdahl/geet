@@ -43,6 +43,7 @@ func (c *Config) Settings() []Setting {
 		{Key: "youtube.max_duration_diff", Usage: "reject YouTube results whose length differs from Spotify's by more than this", ptr: &c.YouTube.MaxDurationDiff},
 		{Key: "youtube.cookies_file", Usage: "Netscape cookies file passed to yt-dlp", ptr: &c.YouTube.CookiesFile},
 		{Key: "youtube.cookies_from_browser", Usage: "send your YouTube sign-in from a browser, to get past \"confirm you're not a bot\": auto (the default browser), or brave, chromium, chrome, firefox, …; the keyring is added automatically. Off by default: YouTube then sees downloads as your account's", ptr: &c.YouTube.CookiesFromBrowser},
+		{Key: "youtube.music_fallback", Usage: "when YouTube search finds no match, look for the song on YouTube Music, which lists official studio audio at the album's exact length (about 4s more for that song only)", ptr: &c.YouTube.MusicFallback},
 		{Key: "youtube.extra_args", Usage: "extra yt-dlp arguments, space-separated", ptr: &c.YouTube.ExtraArgs},
 		{Key: "search.country", Usage: "iTunes store that geet search looks in (two letters, e.g. US, GB, IN)", ptr: &c.Search.Country},
 		{Key: "search.limit", Usage: "search results offered to pick from", ptr: &c.Search.Limit},

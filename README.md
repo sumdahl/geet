@@ -173,6 +173,7 @@ cookies_from_browser = "auto"   # your default browser; or name one: brave, chro
 
 - `auto` finds your default browser. For Chromium-based browsers geet also adds the keyring that holds the cookie key (`brave+gnomekeyring` on Omarchy). Without it, yt-dlp can't decrypt any cookies outside GNOME or KDE and silently sends none.
 - It's off by default: with cookies, YouTube sees the downloads as your account's, and heavy downloading could get that account flagged.
+- **"YouTube age-restricts this video"** means YouTube plays that song (usually an explicit one) only to a signed-in account whose age is verified. The same `cookies_from_browser = "auto"` setting fixes it if the YouTube account in your browser is age-verified. If it isn't, YouTube offers only a low-quality video, and geet says so: verify your age in your Google account. geet won't swap in the clean edit or a cover on its own, since those are different recordings.
 - `geet doctor` shows what `auto` resolved to and checks that the cookies decrypt. It also checks that audio downloads work, not just search, because the block allows search. Interrupting with Ctrl+C is always safe: no partial files are left, and re-running the same command continues where it stopped.
 
 ### Search
@@ -338,6 +339,7 @@ client_secret = "..."
 | `youtube.max_duration_diff` | `--youtube-max-duration-diff` | duration | `10s` | Reject uploads whose length differs more than this |
 | `youtube.cookies_file` | `--youtube-cookies-file` | string | | Netscape cookies file for yt-dlp |
 | `youtube.cookies_from_browser` | `--youtube-cookies-from-browser` | string | *(off)* | Send your YouTube sign-in to get past the bot check: `auto` (default browser) or a browser name; the keyring is added automatically |
+| `youtube.music_fallback` | `--youtube-music-fallback` | bool | `true` | When YouTube search finds no match, look on YouTube Music |
 | `youtube.extra_args` | `--youtube-extra-args` | list | | Extra yt-dlp arguments, space-separated |
 | `search.country` | `--search-country` | string | `US` | iTunes store `geet search` looks in |
 | `search.limit` | `--search-limit` | int | `15` | Results offered to pick from |
@@ -442,6 +444,8 @@ The full schema and its compatibility rules are in [docs/03-communication-contra
   - Scores reward the official, "Topic" or VEVO channel, "audio" uploads, closeness in length, and search rank.
   - Variant words (live, cover, remix, sped up, …) are penalized unless the Spotify title has them too.
   - If nothing matches, a second search asks for the "audio" upload, which catches official videos whose intro pushes them past the length limit.
+  - If that finds nothing either, geet searches **YouTube Music's songs** (`youtube.music_fallback`, on by default). YouTube Music lists the official studio audio (the artist's "- Topic" channel) at the album's exact length, where regular search buries it under music videos with intros, lyric uploads and fan edits. Romanized titles (Nepali "Maayajastai" / "Maayaajastai"), classical pieces and small artists are the usual cases. Only the song results whose titles fit are opened, about 4 s for that song only, and they're scored by the same rules. So a performance by another pianist, or someone else's slowed edit, is still rejected rather than saved under the wrong name.
+  - `$` in a name reads as `s` (A$AP → ASAP), words split differently still match ("1Train" / "1 Train"), and an artist name at the start of a channel name counts (`ASAPROCKYUPTOWN`).
   - Real searches that once picked wrong are kept as test fixtures.
 - **One ffmpeg pass per track.** Download only fetches the raw stream, because yt-dlp's own conversion silently ignores the requested bitrate when the codecs already match. Opus has no picture stream, so its cover goes in a `METADATA_BLOCK_PICTURE` tag. The tags travel in an `FFMETADATA` file because a base64 cover exceeds Linux's 128 KB per-argument limit.
 - **Atomic, resumable output.** Each track is built in a hidden work directory inside the library and renamed into place, so a file either exists complete or not at all. The index is saved after every track.
