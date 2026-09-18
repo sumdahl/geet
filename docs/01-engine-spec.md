@@ -59,7 +59,10 @@ it can't be the only path. Two sources, chosen by config:
 
 ## Output path (`internal/library`)
 - `output` (default `~/Music`) + `output_template` (default
-  `{album_artist}/{album}/{track} {title}`) + `.{format}`.
+  `{artist}/{title} - {artists}`, e.g. `Gunna/fukumean - Gunna.opus`) +
+  `.{format}`. Album/cover/track metadata lives in the file's tags, not
+  the folder layout; users wanting `{album_artist}/{album}/{track} {title}`
+  set it in config.
 - Placeholders: `{title} {artist} {artists} {album} {album_artist} {track}
   {disc} {year} {isrc} {spotify_id}`. Each `/`-separated template segment
   is exactly one path component; values are sanitized (no `/`, FAT-unsafe
