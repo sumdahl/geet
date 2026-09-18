@@ -3,6 +3,7 @@
 package textnorm
 
 import (
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -56,6 +57,15 @@ func Words(s string) []string {
 // "[Live]" and normalizes what's left.
 func Base(s string) string {
 	return Norm(StripVersion(s))
+}
+
+var featPart = regexp.MustCompile(`(?i)\s*[(\[](?:feat\.?|ft\.?|featuring|with)\s[^)\]]*[)\]]`)
+
+// StripFeat drops a "(feat. X)", "[ft. X]" or "(with X)" part and keeps
+// the rest of the title, including a part that tells edits apart: "Tonight
+// (I'm Lovin' You) [feat. Ludacris]" → "Tonight (I'm Lovin' You)".
+func StripFeat(s string) string {
+	return featPart.ReplaceAllString(s, "")
 }
 
 // StripVersion cuts s before a "(", "[" or " - " suffix, leaving the title

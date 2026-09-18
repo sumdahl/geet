@@ -1,6 +1,7 @@
 package youtube
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -9,6 +10,10 @@ import (
 	"github.com/sumdahl/geet/internal/spotify"
 	"github.com/sumdahl/geet/internal/textnorm"
 )
+
+// rejectNoArtist is the one rejection an exact re-upload may overcome (see
+// Alternatives).
+const rejectNoArtist = "no artist named"
 
 const (
 	minTitleCoverage = 0.6
@@ -61,7 +66,7 @@ func score(t spotify.Track, c Candidate, rank, n int, maxDiff time.Duration) Sco
 	channel := textnorm.Tokens(c.Channel)
 	switch artistMatch(t.Artists, append(slices.Clone(ytTitle), channel...), c.Channel) {
 	case 0:
-		return reject("no artist named")
+		return reject(rejectNoArtist)
 	case 1:
 		s.Score += weightArtist
 	default:
@@ -82,6 +87,15 @@ func score(t spotify.Track, c Candidate, rank, n int, maxDiff time.Duration) Sco
 	for range textnorm.Variants(c.Title, t.Title) {
 		s.Score -= penaltyVariant
 	}
+	for range otherEdit(t, c.Title) {
+		s.Score -= penaltyVariant
+	}
+	// A clean edit differs from the explicit song only inside its title's
+	// brackets ("Tonight (I'm Lovin' You)" vs "(I'm Fuckin' You)"), so an
+	// upload missing those words is likely the explicit one.
+	if t.Clean && !fullTitle(t, c.Title) {
+		s.Score -= penaltyVariant
+	}
 	yt := " " + strings.Join(ytTitle, " ") + " "
 	switch {
 	case strings.Contains(yt, " audio "):
@@ -97,6 +111,38 @@ func score(t spotify.Track, c Candidate, rank, n int, maxDiff time.Duration) Sco
 	return s
 }
 
+var (
+	// cleanWords mark a clean (censored) edit; explicitWords an uncensored
+	// one. Matched as whole-word phrases against textnorm.Norm output.
+	cleanWords    = []string{"clean", "radio edit", "radio version", "censored", "edited"}
+	explicitWords = []string{"explicit", "dirty", "uncensored"}
+)
+
+// otherEdit returns the words in title that mark the other edit of the
+// song: a clean edit when t is explicit, and an explicit one when t is the
+// clean edit. The explicit version is the default, so it's what an
+// explicit track must get; a clean edit is only a fallback.
+func otherEdit(t spotify.Track, title string) []string {
+	var marks []string
+	switch {
+	case t.Explicit:
+		marks = cleanWords
+	case t.Clean:
+		marks = explicitWords
+	default:
+		return nil
+	}
+	have := " " + textnorm.Norm(title) + " "
+	own := " " + textnorm.Norm(t.Title) + " "
+	var out []string
+	for _, w := range marks {
+		if strings.Contains(have, " "+w+" ") && !strings.Contains(own, " "+w+" ") {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
 // titleWords are the words that identify the song: the base title without a
 // "(feat. X)" or " - Remastered" suffix, which uploads often leave out.
 // Censored words keep their asterisks as wildcards. A clean edit's title
@@ -107,6 +153,12 @@ func titleWords(t spotify.Track) []string {
 	if len(words) == 0 {
 		words = textnorm.Words(t.Title)
 	}
+	return cutOff(t, words)
+}
+
+// cutOff lets a clean edit's words match the end of an upload's word, as
+// its title may have the explicit part cut off ("umean" for "fukumean").
+func cutOff(t spotify.Track, words []string) []string {
 	if t.Clean {
 		for i, w := range words {
 			if len(w) >= 3 && !strings.Contains(w, "*") {
@@ -209,4 +261,54 @@ func officialChannel(artists []string, channel string, verified bool) (official,
 		}
 	}
 	return false, false
+}
+
+// reuploadDiff is how close a re-upload's length must be: a copy of the
+// same audio keeps it to the second, while a different recording or edit
+// rarely lands within 2s.
+const reuploadDiff = 2 * time.Second
+
+// Alternatives lists what to try when best can't be downloaded, because
+// YouTube age-restricts it: the other accepted candidates, best first, then
+// exact re-uploads. A re-upload was rejected only for not naming the artist
+// (a fan channel re-posting the official audio), but has the song's full
+// title and its length within 2s. Neither may carry variant or other-edit
+// words: matching accepts a remix at a penalty when nothing better exists,
+// but a stand-in for the recording must be the same recording.
+func Alternatives(t spotify.Track, all []Scored, best Scored) []Scored {
+	seen := map[string]bool{best.ID: true}
+	var ok, reuploads []Scored
+	for _, s := range all {
+		if seen[s.ID] {
+			continue
+		}
+		switch {
+		case s.Reject == "" && sameRecording(t, s.Candidate):
+			ok = append(ok, s)
+		case s.Reject == rejectNoArtist && exactReupload(t, s.Candidate):
+			reuploads = append(reuploads, s)
+		default:
+			continue
+		}
+		seen[s.ID] = true
+	}
+	slices.SortStableFunc(ok, func(a, b Scored) int { return cmp.Compare(b.Score, a.Score) })
+	return append(ok, reuploads...)
+}
+
+// sameRecording is how sure a stand-in must be: no variant or other-edit
+// words, and all of the title but a "(feat. …)" part, since what tells an
+// explicit song from its clean edit is often only inside its brackets.
+func sameRecording(t spotify.Track, c Candidate) bool {
+	return len(textnorm.Variants(c.Title, t.Title)) == 0 && len(otherEdit(t, c.Title)) == 0 && fullTitle(t, c.Title)
+}
+
+// fullTitle reports whether title has every word of t's title, not counting
+// a "(feat. …)" part.
+func fullTitle(t spotify.Track, title string) bool {
+	return tokenCoverage(cutOff(t, textnorm.Words(textnorm.StripFeat(t.Title))), textnorm.Words(title)) == 1
+}
+
+func exactReupload(t spotify.Track, c Candidate) bool {
+	return !c.Live && (c.Duration-t.Duration).Abs() <= reuploadDiff && sameRecording(t, c)
 }

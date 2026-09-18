@@ -175,6 +175,7 @@ func (w *Web) readTrack(ctx context.Context, id string) (Track, error) {
 		t.Title = it.Title
 		t.Artists = strings.Split(it.Subtitle, embedArtistSep)
 		t.Duration = time.Duration(it.Duration) * time.Millisecond
+		t.Explicit = it.IsExplicit
 		return t, nil
 	}
 	// The album embed didn't list this track; the meta tags are coarser
@@ -218,6 +219,7 @@ func (w *Web) Album(ctx context.Context, id string) ([]Track, error) {
 			TrackNumber: i + 1,
 			Year:        yr,
 			Duration:    time.Duration(it.Duration) * time.Millisecond,
+			Explicit:    it.IsExplicit,
 		})
 	}
 	return tracks, nil
@@ -377,6 +379,7 @@ type embedItem struct {
 	Subtitle   string `json:"subtitle"`
 	Duration   int    `json:"duration"`
 	EntityType string `json:"entityType"`
+	IsExplicit bool   `json:"isExplicit"`
 }
 
 type embedImage struct {

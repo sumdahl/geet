@@ -221,3 +221,56 @@ func FuzzParseRef(f *testing.F) {
 		}
 	})
 }
+
+// The clean edits of explicit songs, in real catalog searches: Enrique
+// Iglesias's "Tonight (I'm Fuckin' You)" is "Tonight (I'm Lovin' You)", and
+// Gunna's "fukumean" is "umean". "I Like It", by the same artist and
+// equally long, must not be taken for a clean edit.
+func TestCleanEdit(t *testing.T) {
+	c, _ := newTestClient(t)
+	tests := []struct {
+		name      string
+		track     spotify.Track
+		term      string
+		wantTitle string
+	}{
+		{
+			name:      "words swapped",
+			track:     spotify.Track{Title: "Tonight (I'm Fuckin' You)", Artists: []string{"Enrique Iglesias", "Ludacris", "DJ Frank E"}, Duration: 232213 * time.Millisecond, Explicit: true},
+			term:      "Enrique Iglesias Tonight",
+			wantTitle: "Tonight (I'm Lovin' You) [feat. Ludacris & DJ Frank E]",
+		},
+		{
+			name:      "words cut off",
+			track:     spotify.Track{Title: "fukumean", Artists: []string{"Gunna"}, Duration: 125 * time.Second, Explicit: true},
+			term:      "Gunna fukumean",
+			wantTitle: "umean",
+		},
+		{
+			name:  "no clean edit listed",
+			track: spotify.Track{Title: "Some Explicit Song", Artists: []string{"Enrique Iglesias"}, Duration: 232 * time.Second, Explicit: true},
+			term:  "Enrique Iglesias Tonight",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CleanEditTerm(tt.track); tt.name != "no clean edit listed" && got != tt.term {
+				t.Errorf("CleanEditTerm = %q, want %q", got, tt.term)
+			}
+			results, err := c.Search(context.Background(), tt.term)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, ok := CleanEdit(tt.track, results)
+			if tt.wantTitle == "" {
+				if ok {
+					t.Errorf("found %q, want none", got.Title)
+				}
+				return
+			}
+			if !ok || got.Title != tt.wantTitle || !got.Clean {
+				t.Errorf("CleanEdit = %q (ok %v, clean %v), want %q", got.Title, ok, got.Clean, tt.wantTitle)
+			}
+		})
+	}
+}

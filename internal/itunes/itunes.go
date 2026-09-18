@@ -168,6 +168,7 @@ func (r result) toTrack() spotify.Track {
 		Duration:    time.Duration(r.TrackTimeMillis) * time.Millisecond,
 		SourceURL:   r.TrackViewURL,
 		Clean:       r.TrackExplicitness == "cleaned",
+		Explicit:    r.TrackExplicitness == "explicit",
 	}
 	if t.AlbumArtist == "" {
 		t.AlbumArtist = r.ArtistName

@@ -173,7 +173,11 @@ cookies_from_browser = "auto"   # your default browser; or name one: brave, chro
 
 - `auto` finds your default browser. For Chromium-based browsers geet also adds the keyring that holds the cookie key (`brave+gnomekeyring` on Omarchy). Without it, yt-dlp can't decrypt any cookies outside GNOME or KDE and silently sends none.
 - It's off by default: with cookies, YouTube sees the downloads as your account's, and heavy downloading could get that account flagged.
-- **"YouTube age-restricts this video"** means YouTube plays that song (usually an explicit one) only to a signed-in account whose age is verified. The same `cookies_from_browser = "auto"` setting fixes it if the YouTube account in your browser is age-verified. If it isn't, YouTube offers only a low-quality video, and geet says so: verify your age in your Google account. geet won't swap in the clean edit or a cover on its own, since those are different recordings.
+- **Explicit songs come as the explicit version by default.** Spotify marks them, and uploads marked clean, radio edit or censored score lower. YouTube often age-restricts the official explicit upload, playing it only to a signed-in, age-verified account. When it does, geet tries, in order:
+  1. Other uploads of the same recording that passed matching, then exact re-uploads: the full title and within 2 s of the length, even from a channel that doesn't name the artist.
+  2. **The clean edit, as the last resort.** It's found in the Apple catalog ("Tonight (I'm Lovin' You)" for "Tonight (I'm Fuckin' You)", "umean" for "fukumean"). It's saved with " (Clean)" added to its title tag and a warning, so a clean file is never mistaken for the explicit one.
+
+  geet also says once how to get the explicit version from the official upload: set `cookies_from_browser = "auto"`, with a YouTube account whose age is verified. A remix, cover or live version never stands in for the song.
 - `geet doctor` shows what `auto` resolved to and checks that the cookies decrypt. It also checks that audio downloads work, not just search, because the block allows search. Interrupting with Ctrl+C is always safe: no partial files are left, and re-running the same command continues where it stopped.
 
 ### Search

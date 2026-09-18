@@ -25,6 +25,9 @@ type Track struct {
 	SourceURL string
 	// Clean marks a clean (censored) edit of an explicit song.
 	Clean bool
+	// Explicit marks a song with explicit lyrics. Its explicit upload is
+	// preferred, and a clean edit is only a fallback.
+	Explicit bool
 }
 
 // Collection is what a Spotify link resolves to.

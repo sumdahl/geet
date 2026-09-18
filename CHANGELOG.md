@@ -8,6 +8,15 @@ still change the CLI, the configuration or the `--json` output.
 ## [Unreleased]
 
 ### Added
+- Explicit songs download as the explicit version by default, and the clean
+  edit is only a fallback. geet reads Spotify's (and Apple's) explicit
+  flag, and uploads marked clean, radio edit or censored score lower. When
+  YouTube age-restricts the explicit upload, geet tries other uploads of the
+  same recording, including exact re-uploads (full title, within 2 s), and
+  only then the clean edit, found in the Apple catalog and saved with
+  " (Clean)" in its title tag and a warning. Tested live on Enrique Iglesias's
+  "Tonight (I'm Fuckin' You)": without any sign-in it now saves the explicit
+  audio (232.26 s against Spotify's 232.21 s) from a re-upload.
 - Songs read from Spotify's public pages are cached for 30 days in
   `~/.cache/geet/spotify.json` (`spotify.cache_days`, where 0 turns it off).
   Reading a playlist again, to pick up new songs or retry skipped ones,
