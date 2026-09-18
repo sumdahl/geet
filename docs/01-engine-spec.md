@@ -39,6 +39,10 @@ it can't be the only path. Two sources, chosen by config:
     name), verified, "audio" in title, duration closeness, search rank.
   - Penalize "live", "cover", "remix", "concert", "sped up", … unless the
     Spotify title contains the same word.
+- Nothing matched? Search once more with `youtube.fallback_query` (default
+  `{artists} - {title} audio`): an official video with an intro can push
+  the first page past the duration limit while the artist's separate
+  "(Audio)" upload only shows up when asked for (real case: "Renegade").
 - Fixtures in `testdata/` are real yt-dlp output; add one whenever a real
   search picks wrong.
 

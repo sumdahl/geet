@@ -37,6 +37,7 @@ func (c *Config) Settings() []Setting {
 		{Key: "spotify.client_id", Usage: "Spotify Web API client ID (optional; needs Premium)", ptr: &c.Spotify.ClientID},
 		{Key: "spotify.client_secret", Usage: "Spotify Web API client secret", Secret: true, ptr: &c.Spotify.ClientSecret},
 		{Key: "youtube.search_query", Usage: "YouTube search text; placeholders: {artists} {artist} {title} {album}", ptr: &c.YouTube.SearchQuery},
+		{Key: "youtube.fallback_query", Usage: "second search when nothing from search_query matches (same placeholders); empty disables", ptr: &c.YouTube.FallbackQuery},
 		{Key: "youtube.search_results", Usage: "YouTube results to score per track", ptr: &c.YouTube.SearchResults},
 		{Key: "youtube.max_duration_diff", Usage: "reject YouTube results whose length differs from Spotify's by more than this", ptr: &c.YouTube.MaxDurationDiff},
 		{Key: "youtube.cookies_file", Usage: "Netscape cookies file passed to yt-dlp", ptr: &c.YouTube.CookiesFile},

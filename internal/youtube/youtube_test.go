@@ -183,7 +183,7 @@ func TestSearchRunsYtDlp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gotArgs := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	gotArgs := strings.Split(strings.TrimSuffix(strings.TrimSpace(string(raw)), "\n--"), "\n")
 	wantArgs := []string{
 		"--cookies-from-browser", "firefox",
 		"--proxy", "socks5://127.0.0.1:9050",
@@ -213,4 +213,45 @@ func TestSearchErrors(t *testing.T) {
 			t.Fatalf("err = %v, want yt-dlp's stderr in it", err)
 		}
 	})
+}
+
+// The first page has only the official video (intro: 12s too long) and a
+// trimmed lyrics upload (12s too short); the fallback query finds the
+// artist's "(Audio)" upload within range.
+func TestResolveFallsBackToAudioQuery(t *testing.T) {
+	bin, _ := filepath.Abs("testdata/fake-yt-dlp")
+	first, _ := filepath.Abs("testdata/renegade.ndjson")
+	second, _ := filepath.Abs("testdata/renegade_audio.ndjson")
+	argsFile := filepath.Join(t.TempDir(), "args")
+	t.Setenv("FAKE_YTDLP_ARGS", argsFile)
+	t.Setenv("FAKE_YTDLP_OUTPUTS", first+" "+second)
+
+	r := New(Options{
+		YtDlp:           ytdlp.Runner{Binary: bin},
+		SearchQuery:     "{artists} - {title}",
+		FallbackQuery:   "{artists} - {title} audio",
+		SearchResults:   5,
+		MaxDurationDiff: maxDiff,
+	})
+	track := spotify.Track{Title: "Renegade", Artists: []string{"Aaryan Shah"}, Duration: 222576 * time.Millisecond}
+	best, all, err := r.Resolve(context.Background(), track)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if best.ID != "vTDzejo_8Ng" {
+		t.Errorf("picked %s %q, want the (Audio) upload vTDzejo_8Ng", best.ID, best.Title)
+	}
+	if len(all) != 10 {
+		t.Errorf("%d candidates reported, want both searches' 10", len(all))
+	}
+	raw, _ := os.ReadFile(argsFile)
+	if !strings.Contains(string(raw), "ytsearch5:Aaryan Shah - Renegade audio") {
+		t.Errorf("fallback query not searched:\n%s", raw)
+	}
+
+	r.opts.FallbackQuery = ""
+	os.Remove(argsFile)
+	if _, _, err := r.Resolve(context.Background(), track); !errors.Is(err, ErrNoMatch) {
+		t.Errorf("without a fallback: err = %v, want ErrNoMatch", err)
+	}
 }

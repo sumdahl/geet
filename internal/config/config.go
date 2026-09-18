@@ -58,6 +58,7 @@ type Spotify struct {
 
 type YouTube struct {
 	SearchQuery        string   `toml:"search_query" json:"search_query"`
+	FallbackQuery      string   `toml:"fallback_query" json:"fallback_query"`
 	SearchResults      int      `toml:"search_results" json:"search_results"`
 	MaxDurationDiff    Duration `toml:"max_duration_diff" json:"max_duration_diff"`
 	CookiesFile        string   `toml:"cookies_file" json:"cookies_file"`
@@ -100,6 +101,7 @@ func Default() Config {
 		ResolveJobs:        8,
 		YouTube: YouTube{
 			SearchQuery:     "{artists} - {title}",
+			FallbackQuery:   "{artists} - {title} audio",
 			SearchResults:   5,
 			MaxDurationDiff: Duration{10 * time.Second},
 			ExtraArgs:       []string{},
@@ -206,6 +208,9 @@ func (c Config) Validate() error {
 	}
 	if !strings.Contains(c.YouTube.SearchQuery, "{title}") {
 		errs = append(errs, errors.New("youtube.search_query must contain {title}"))
+	}
+	if c.YouTube.FallbackQuery != "" && !strings.Contains(c.YouTube.FallbackQuery, "{title}") {
+		errs = append(errs, errors.New("youtube.fallback_query must contain {title}, or be empty to disable it"))
 	}
 	if c.YouTube.SearchResults < 1 || c.YouTube.SearchResults > 50 {
 		errs = append(errs, fmt.Errorf("youtube.search_results must be 1-50, got %d", c.YouTube.SearchResults))

@@ -261,6 +261,7 @@ func newDownloader(cfg config.Config, root string, rep *reporter, idx *index.Ind
 		yt: youtube.New(youtube.Options{
 			YtDlp:           ytd,
 			SearchQuery:     cfg.YouTube.SearchQuery,
+			FallbackQuery:   cfg.YouTube.FallbackQuery,
 			SearchResults:   cfg.YouTube.SearchResults,
 			MaxDurationDiff: cfg.YouTube.MaxDurationDiff.Duration,
 		}),

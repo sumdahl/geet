@@ -27,6 +27,7 @@ var ErrNoMatch = errors.New("no YouTube result matched")
 type Options struct {
 	YtDlp           ytdlp.Runner
 	SearchQuery     string // with {artists} {artist} {title} {album} placeholders
+	FallbackQuery   string // searched when nothing from SearchQuery matches; "" disables
 	SearchResults   int
 	MaxDurationDiff time.Duration
 }
@@ -51,15 +52,28 @@ func New(opts Options) *Resolver {
 }
 
 // Resolve searches YouTube for t and returns the best match, plus every
-// candidate with its score or rejection reason.
+// candidate with its score or rejection reason. If nothing matches, it
+// searches again with the fallback query: an official video with an intro
+// can push the first page past the duration limit while the artist's
+// separate "(Audio)" upload only turns up when asked for.
 func (r *Resolver) Resolve(ctx context.Context, t spotify.Track) (Scored, []Scored, error) {
-	cands, err := r.Search(ctx, r.Query(t))
+	best, all, err := r.resolve(ctx, t, r.opts.SearchQuery)
+	if errors.Is(err, ErrNoMatch) && r.opts.FallbackQuery != "" {
+		var more []Scored
+		best, more, err = r.resolve(ctx, t, r.opts.FallbackQuery)
+		all = append(all, more...)
+	}
+	return best, all, err
+}
+
+func (r *Resolver) resolve(ctx context.Context, t spotify.Track, query string) (Scored, []Scored, error) {
+	cands, err := r.Search(ctx, r.fill(query, t))
 	if err != nil {
 		return Scored{}, nil, err
 	}
 	best, all, err := Best(t, cands, r.opts.MaxDurationDiff)
 	for _, s := range all {
-		slog.DebugContext(ctx, "youtube candidate", "track", t.Title, "id", s.ID, "title", s.Title,
+		slog.DebugContext(ctx, "youtube candidate", "track", t.Title, "query", query, "id", s.ID, "title", s.Title,
 			"channel", s.Channel, "score", fmt.Sprintf("%.1f", s.Score), "reject", s.Reject)
 	}
 	return best, all, err
@@ -80,7 +94,12 @@ func Best(t spotify.Track, cands []Candidate, maxDiff time.Duration) (Scored, []
 	return best, all, nil
 }
 
+// Query is the first search text for t.
 func (r *Resolver) Query(t spotify.Track) string {
+	return r.fill(r.opts.SearchQuery, t)
+}
+
+func (r *Resolver) fill(query string, t spotify.Track) string {
 	artist := ""
 	if len(t.Artists) > 0 {
 		artist = t.Artists[0]
@@ -90,7 +109,7 @@ func (r *Resolver) Query(t spotify.Track) string {
 		"{artist}", artist,
 		"{title}", t.Title,
 		"{album}", t.Album,
-	).Replace(r.opts.SearchQuery)
+	).Replace(query)
 }
 
 func (r *Resolver) Search(ctx context.Context, query string) ([]Candidate, error) {
