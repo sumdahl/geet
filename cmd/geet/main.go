@@ -53,6 +53,7 @@ commands:
   watch                    download each Spotify link you copy, until stopped
   doctor                   check tools, setup and services, and how to fix problems
   config                   show the effective configuration
+  config init              write the config file, every setting commented, to edit
   config path              print the config file location
   config settings          list every setting with its flag and env variable
   version                  print the version
@@ -464,13 +465,18 @@ func articled(word string) string {
 }
 
 func configCmd(args []string, stdout, stderr io.Writer) int {
-	c := newCLI("config", "config [path|settings] [flags]", stderr)
+	c := newCLI("config", "config [init|path|settings] [flags]", stderr)
+	force := c.fs.Bool("force", false, "config init: replace an existing config file")
 	positional, err := c.parse(args)
 	if errors.Is(err, flag.ErrHelp) {
 		return exitOK
 	}
 	if err != nil || len(positional) > 1 {
 		return exitFatal
+	}
+	// init writes the file, so it mustn't need an existing one to load.
+	if len(positional) == 1 && positional[0] == "init" {
+		return configInit(c, *force, stdout, stderr)
 	}
 	cfg, path, err := c.load()
 	if err != nil {
@@ -506,6 +512,42 @@ func configCmd(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "geet: %v\n", err)
 		return exitFatal
 	}
+	return exitOK
+}
+
+// configInit writes the config file with every setting listed at its
+// default and commented out (config.Template), for the user to edit. An
+// existing file is left alone unless force: it may hold the user's settings.
+func configInit(c *cli, force bool, stdout, stderr io.Writer) int {
+	path := c.configPath
+	if path == "" {
+		p, err := config.DefaultPath()
+		if err != nil {
+			fmt.Fprintf(stderr, "geet: %v\n", err)
+			return exitFatal
+		}
+		path = p
+	}
+	if _, err := os.Stat(path); err == nil && !force {
+		fmt.Fprintf(stderr, "geet: %s already exists; edit it, or run \"geet config init --force\" to replace it with the defaults\n", path)
+		return exitFatal
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		fmt.Fprintf(stderr, "geet: %v\n", err)
+		return exitFatal
+	}
+	if err := os.WriteFile(path, []byte(config.Template()), 0o644); err != nil {
+		fmt.Fprintf(stderr, "geet: %v\n", err)
+		return exitFatal
+	}
+	if c.json {
+		if err := writeJSON(stdout, map[string]any{"path": path}); err != nil {
+			fmt.Fprintf(stderr, "geet: %v\n", err)
+			return exitFatal
+		}
+		return exitOK
+	}
+	fmt.Fprintf(stdout, "Wrote %s: every setting at its default, commented out. Uncomment a line to change it.\n", path)
 	return exitOK
 }
 

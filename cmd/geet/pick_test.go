@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"log/slog"
 	"os"
@@ -211,5 +212,35 @@ func TestBriefHandler(t *testing.T) {
 	slog.Warn("skipping a track Spotify no longer has", "id", "abc")
 	if got, want := out.String(), "warning: skipping a track Spotify no longer has (id=abc)\n"; got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestConfigInit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "geet", "config.toml")
+	var out, errOut bytes.Buffer
+	if code := run([]string{"config", "init", "--config", path}, &out, &errOut); code != exitOK {
+		t.Fatalf("init: exit %d: %s", code, errOut.String())
+	}
+	b, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(b), "# jobs = 4") {
+		t.Fatalf("file not written with the template: %v", err)
+	}
+
+	// The user's settings are never replaced silently.
+	if err := os.WriteFile(path, []byte("jobs = 16\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	errOut.Reset()
+	if code := run([]string{"config", "init", "--config", path}, &out, &errOut); code == exitOK || !strings.Contains(errOut.String(), "already exists") {
+		t.Errorf("init over an existing file: exit %d, %q", code, errOut.String())
+	}
+	if b, _ := os.ReadFile(path); string(b) != "jobs = 16\n" {
+		t.Errorf("existing file changed: %q", b)
+	}
+	if code := run([]string{"config", "init", "--config", path, "--force"}, &out, &errOut); code != exitOK {
+		t.Fatalf("init --force: exit %d", code)
+	}
+	if b, _ := os.ReadFile(path); !strings.Contains(string(b), "# jobs = 4") {
+		t.Error("--force didn't write the template")
 	}
 }
