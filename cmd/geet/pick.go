@@ -51,7 +51,7 @@ func pickFzf(ctx context.Context, bin, query string, labels []string) ([]int, er
 		"--multi", "--delimiter", "\t", "--with-nth", "2..",
 		"--layout", "reverse", "--height", "50%", "--border", "rounded",
 		"--prompt", "Search › ",
-		"--header", fmt.Sprintf("Results for %q · Tab: pick several · Enter: download · Esc: cancel", query),
+		"--header", fmt.Sprintf("Results for %q · Tab: pick several · Enter: choose · Esc: cancel", query),
 	)
 	cmd.Stdin = strings.NewReader(input.String())
 	cmd.Stderr = os.Stderr
@@ -132,6 +132,33 @@ func parseChoice(s string, n int) (picked []int, quit bool, err error) {
 		return nil, false, fmt.Errorf("pick a number from 1 to %d", n)
 	}
 	return picked, false, nil
+}
+
+// confirmDownload lists the picked songs and asks before downloading them.
+// Enter or y means yes; n, q or end of input means no.
+func confirmDownload(in io.Reader, out io.Writer, labels []string) bool {
+	fmt.Fprintln(out, "Selected:")
+	for _, l := range labels {
+		fmt.Fprintf(out, "  • %s\n", l)
+	}
+	noun := "song"
+	if len(labels) != 1 {
+		noun = "songs"
+	}
+	sc := bufio.NewScanner(in)
+	for {
+		fmt.Fprintf(out, "Download %d %s? [Y/n] ", len(labels), noun)
+		if !sc.Scan() {
+			fmt.Fprintln(out)
+			return false
+		}
+		switch strings.ToLower(strings.TrimSpace(sc.Text())) {
+		case "", "y", "yes":
+			return true
+		case "n", "no", "q", "quit":
+			return false
+		}
+	}
 }
 
 // resultLabel is one line of the picker: "Title — Artists · Album (Year) m:ss".

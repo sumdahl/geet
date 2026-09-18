@@ -75,6 +75,7 @@ type Search struct {
 	Country string `toml:"country" json:"country"`
 	Limit   int    `toml:"limit" json:"limit"`
 	Picker  string `toml:"picker" json:"picker"`
+	Confirm bool   `toml:"confirm" json:"confirm"`
 }
 
 type Tools struct {
@@ -117,7 +118,7 @@ func Default() Config {
 			MaxDurationDiff: Duration{10 * time.Second},
 			ExtraArgs:       []string{},
 		},
-		Search: Search{Country: "US", Limit: 15, Picker: "auto"},
+		Search: Search{Country: "US", Limit: 15, Picker: "auto", Confirm: true},
 		Tools:  Tools{YtDlp: "yt-dlp", FFmpeg: "ffmpeg", FFprobe: "ffprobe"},
 	}
 }

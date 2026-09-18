@@ -83,13 +83,18 @@ $ geet search blinding lights
 │   Blinding Lights — KIDZ BOP Kids · KIDZ BOP 2021 (2020) 2:59│
 │   Blinding Lights — Teddy Swims (2020) 3:34                  │
 │   15/15 ─────────────────────────────────────────────────────│
-│ Tab: pick several · Enter: download · Esc: cancel            │
+│ Tab: pick several · Enter: choose · Esc: cancel              │
 ╰──────────────────────────────────────────────────────────────╯
+Selected:
+  • Blinding Lights — The Weeknd · After Hours (2019) 3:20
+Download 1 song? [Y/n]
 ```
 
 - Songs come from the iTunes catalog: no key, any country's store (`search.country`, default `US`), and Nepali and other regional music included.
 - The raw catalog order puts covers above originals, so geet merges album editions of the same recording and re-ranks. Covers, remixes, instrumentals, slowed and lullaby versions sink, and the original (listed on the most editions) rises.
-- The menu is [fzf](https://github.com/junegunn/fzf), which ships with Omarchy: type to filter, Tab to pick several songs, which then download in parallel. Without fzf you get a numbered list (`1`, `1 3` or `2-4`).
+- The menu is [fzf](https://github.com/junegunn/fzf), which ships with Omarchy: type to filter (`weeknd` narrows to that artist), Tab to pick several songs, which then download in parallel. Without fzf you get a numbered list (`1`, `1 3` or `2-4`).
+- Before downloading, geet lists your picks and asks `Download N songs? [Y/n]`, so a stray Enter never starts a download. Skip the question with `-y` / `--yes`, or set `search.confirm = false`. `--pick` never asks.
+- To get a specific artist's version, add the artist to the search: `geet search blinding lights weeknd`.
 - Scripting: `geet search <words> --pick 1` chooses without a menu, and `geet search <words> --json` lists results (each with a `ref`) without downloading. `geet download itunes:<id>` and Apple Music song links download directly.
 - Limits:
   - Apple's public catalog lists some explicit songs only as clean edits, whose titles are censored too ("umean" for Gunna's "fukumean"). These are marked `(clean)`, and matching still finds the right upload.
@@ -167,6 +172,7 @@ client_secret = "..."
 | `search.country` | `--search-country` | string | `US` | iTunes store `geet search` looks in |
 | `search.limit` | `--search-limit` | int | `15` | Results offered to pick from |
 | `search.picker` | `--search-picker` | string | `auto` | `auto` (fzf if installed), `fzf` or `list` |
+| `search.confirm` | `--search-confirm` | bool | `true` | Ask before downloading menu picks |
 | `tools.yt_dlp` | `--tools-yt-dlp` | string | `yt-dlp` | Executables |
 | `tools.ffmpeg` | `--tools-ffmpeg` | string | `ffmpeg` | |
 | `tools.ffprobe` | `--tools-ffprobe` | string | `ffprobe` | |

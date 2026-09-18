@@ -123,3 +123,28 @@ func TestResultLabel(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
+
+func TestConfirmDownload(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"\n", true},
+		{"y\n", true},
+		{"YES\n", true},
+		{"n\n", false},
+		{"q\n", false},
+		{"maybe\nn\n", false}, // unclear answers ask again
+		{"maybe\n\n", true},
+		{"", false}, // end of input never downloads
+	}
+	for _, tt := range tests {
+		var out strings.Builder
+		if got := confirmDownload(strings.NewReader(tt.input), &out, []string{"Song — A", "Other — B"}); got != tt.want {
+			t.Errorf("input %q: got %v, want %v", tt.input, got, tt.want)
+		}
+		if !strings.Contains(out.String(), "  • Song — A") || !strings.Contains(out.String(), "Download 2 songs? [Y/n]") {
+			t.Errorf("prompt:\n%s", out.String())
+		}
+	}
+}

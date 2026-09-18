@@ -39,6 +39,9 @@ type searchResult struct {
 func searchCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	c := newCLI("search", "search [flags] <words…>", stderr)
 	pick := c.fs.String("pick", "", "choose without a menu: result numbers such as 1, 1,3 or 2-4")
+	var yes bool
+	c.fs.BoolVar(&yes, "yes", false, "download menu picks without asking to confirm")
+	c.fs.BoolVar(&yes, "y", false, "short for --yes")
 	positional, err := c.parse(args)
 	if errors.Is(err, flag.ErrHelp) {
 		return exitOK
@@ -109,6 +112,18 @@ func searchCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	if len(picked) == 0 {
 		fmt.Fprintln(stderr, "Nothing selected.")
 		return exitOK
+	}
+	// A stray Enter in the menu shouldn't start a download: show the picks
+	// and ask once. --pick is already deliberate, so it never asks.
+	if *pick == "" && cfg.Search.Confirm && !yes {
+		labels := make([]string, len(picked))
+		for i, p := range picked {
+			labels[i] = resultLabel(results[p])
+		}
+		if !confirmDownload(os.Stdin, stderr, labels) {
+			fmt.Fprintln(stderr, "Cancelled: nothing downloaded.")
+			return exitOK
+		}
 	}
 
 	tracks := make([]spotify.Track, len(picked))

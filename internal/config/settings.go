@@ -46,6 +46,7 @@ func (c *Config) Settings() []Setting {
 		{Key: "search.country", Usage: "iTunes store that geet search looks in (two letters, e.g. US, GB, IN)", ptr: &c.Search.Country},
 		{Key: "search.limit", Usage: "search results offered to pick from", ptr: &c.Search.Limit},
 		{Key: "search.picker", Usage: "how search results are picked: auto (fzf if installed), fzf or list (numbered prompt)", ptr: &c.Search.Picker},
+		{Key: "search.confirm", Usage: "ask before downloading songs picked from the search menu (--pick never asks)", ptr: &c.Search.Confirm},
 		{Key: "tools.yt_dlp", Usage: "yt-dlp executable", ptr: &c.Tools.YtDlp},
 		{Key: "tools.ffmpeg", Usage: "ffmpeg executable", ptr: &c.Tools.FFmpeg},
 		{Key: "tools.ffprobe", Usage: "ffprobe executable, used to index a library downloaded before the index existed", ptr: &c.Tools.FFprobe},
