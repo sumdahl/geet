@@ -4,7 +4,7 @@ go 1.27.1
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/mattn/go-runewidth v0.0.28
+	github.com/mattn/go-runewidth v0.0.30
 	github.com/vbauerster/mpb/v8 v8.16.1
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sync v0.23.0
