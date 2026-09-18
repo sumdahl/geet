@@ -29,6 +29,7 @@ func (c *Config) Settings() []Setting {
 		{Key: "bitrate", Usage: `audio bitrate such as 320k; empty means best available`, ptr: &c.Bitrate},
 		{Key: "overwrite", Usage: "re-download tracks whose file already exists instead of skipping them", ptr: &c.Overwrite},
 		{Key: "progress", Usage: "animated progress bars: auto (only in a terminal, and not with --json), always or never", ptr: &c.Progress},
+		{Key: "download_retries", Usage: "extra attempts when a YouTube download fails (it is often a temporary 403 or throttling)", ptr: &c.DownloadRetries},
 		{Key: "jobs", Usage: "concurrent downloads", ptr: &c.Jobs},
 		{Key: "resolve_jobs", Usage: "concurrent YouTube lookups", ptr: &c.ResolveJobs},
 		{Key: "spotify.client_id", Usage: "Spotify Web API client ID (optional; needs Premium)", ptr: &c.Spotify.ClientID},

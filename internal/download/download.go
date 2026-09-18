@@ -52,7 +52,7 @@ func Fetch(ctx context.Context, y ytdlp.Runner, url, dir string, onProgress func
 		"--print", "after_move:%(filepath)s\t%(acodec)s\t%(abr)s",
 		"--", url)
 	if err != nil {
-		return Source{}, fmt.Errorf("downloading %s: %w", url, err)
+		return Source{}, fmt.Errorf("download failed: %w", err)
 	}
 	return parsePrint(result)
 }

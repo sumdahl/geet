@@ -17,10 +17,16 @@ import (
 // ui is the human-facing progress display on stderr. The NDJSON stream is
 // separate (reporter) and never depends on which ui is active.
 type ui interface {
+	phase(label string) phaseUI // a step before downloads start, e.g. reading a playlist
 	track(index, total int, name string) trackUI
 	log(format string, args ...any) // a line above any live progress
 	writer() io.Writer              // for slog, so logs don't tear the bars
 	close(abort bool)
+}
+
+type phaseUI interface {
+	set(done, total int)
+	finish()
 }
 
 type trackUI interface {
@@ -48,6 +54,16 @@ type plainUI struct {
 	mu sync.Mutex
 	w  io.Writer
 }
+
+func (u *plainUI) phase(label string) phaseUI {
+	u.log("%s…", label)
+	return plainPhase{}
+}
+
+type plainPhase struct{}
+
+func (plainPhase) set(int, int) {}
+func (plainPhase) finish()      {}
 
 func (u *plainUI) track(index, total int, name string) trackUI {
 	u.log("[%d/%d] %s", index, total, name)
@@ -132,6 +148,44 @@ func (u *barUI) track(index, total int, name string) trackUI {
 		mpb.BarRemoveOnComplete(),
 	)
 	return t
+}
+
+func (u *barUI) phase(label string) phaseUI {
+	ph := &barPhase{started: time.Now()}
+	style := mpb.BarStyle().Lbound("").Rbound("").Filler("━").Tip("━").Padding("─").
+		FillerMeta(func(s string) string { return u.paint("36", s) }).
+		TipMeta(func(s string) string { return u.paint("36", s) }).
+		PaddingMeta(func(s string) string { return u.paint("2", s) })
+	// Total is unknown until the first set; the spinner shows life meanwhile.
+	ph.bar = u.p.New(0, style,
+		mpb.PrependDecorators(decor.Any(func(decor.Statistics) string {
+			return u.paint("36", spinner[int(time.Since(ph.started)/(80*time.Millisecond))%len(spinner)]) + " " + label
+		}, decor.WCSyncSpaceR)),
+		mpb.AppendDecorators(decor.Any(func(s decor.Statistics) string {
+			if s.Total <= 0 {
+				return ""
+			}
+			return fmt.Sprintf("%d/%d", s.Current, s.Total)
+		})),
+		mpb.BarRemoveOnComplete(),
+	)
+	return ph
+}
+
+type barPhase struct {
+	bar     *mpb.Bar
+	started time.Time
+}
+
+func (p *barPhase) set(done, total int) {
+	p.bar.SetTotal(int64(total), false)
+	p.bar.SetCurrent(int64(done))
+}
+
+func (p *barPhase) finish() {
+	if !p.bar.Completed() {
+		p.bar.Abort(true)
+	}
 }
 
 func (u *barUI) log(format string, args ...any) {

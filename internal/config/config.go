@@ -37,6 +37,7 @@ type Config struct {
 	Bitrate            string  `toml:"bitrate" json:"bitrate"`
 	Overwrite          bool    `toml:"overwrite" json:"overwrite"`
 	Progress           string  `toml:"progress" json:"progress"`
+	DownloadRetries    int     `toml:"download_retries" json:"download_retries"`
 	Jobs               int     `toml:"jobs" json:"jobs"`
 	ResolveJobs        int     `toml:"resolve_jobs" json:"resolve_jobs"`
 	Spotify            Spotify `toml:"spotify" json:"spotify"`
@@ -88,6 +89,7 @@ func Default() Config {
 		PlaylistFolderCase: "lower",
 		Format:             "opus",
 		Progress:           "auto",
+		DownloadRetries:    2,
 		Jobs:               4,
 		ResolveJobs:        8,
 		YouTube: YouTube{
@@ -178,6 +180,9 @@ func (c Config) Validate() error {
 	}
 	if c.Bitrate != "" && !bitrate.MatchString(c.Bitrate) {
 		errs = append(errs, fmt.Errorf("bitrate %q must look like 320k, or be empty for best quality", c.Bitrate))
+	}
+	if c.DownloadRetries < 0 || c.DownloadRetries > 10 {
+		errs = append(errs, fmt.Errorf("download_retries must be 0-10, got %d", c.DownloadRetries))
 	}
 	if c.Jobs < 1 {
 		errs = append(errs, fmt.Errorf("jobs must be at least 1, got %d", c.Jobs))

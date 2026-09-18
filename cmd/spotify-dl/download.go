@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/sumdahl/spotify-dl/internal/audio"
 	"github.com/sumdahl/spotify-dl/internal/config"
@@ -27,7 +28,8 @@ import (
 // contract.md). Fields are only ever added, never renamed or removed.
 type event struct {
 	Track      string  `json:"track"`
-	Stage      string  `json:"stage"` // resolved|downloading|tagging|done|failed
+	Stage      string  `json:"stage"`          // reading|resolved|downloading|tagging|done|failed
+	Step       string  `json:"step,omitempty"` // "reading" only: spotify, then tags
 	Error      string  `json:"error,omitempty"`
 	Fatal      bool    `json:"fatal,omitempty"` // the whole run stopped, not just this track
 	SpotifyID  string  `json:"spotify_id,omitempty"`
@@ -68,6 +70,15 @@ func (r *reporter) emit(tu trackUI, e event) {
 	tu.stage(e)
 	if warn {
 		r.ui.log("warning: %s", e.Warning)
+	}
+}
+
+// reading reports progress resolving the link, before any track starts.
+func (r *reporter) reading(step string, done, total int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.json != nil {
+		r.json.Encode(event{Stage: "reading", Step: step, Index: done, Total: total})
 	}
 }
 
@@ -116,8 +127,37 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		}
 	}
 
-	fmt.Fprintf(stderr, "Reading %s %s from Spotify…\n", ref.Kind, ref.ID)
-	col, err := resolveMetadata(ctx, cfg, ref)
+	rep.ui = chooseUI(cfg.Progress, stderr, c.json)
+	setupLogging(rep.ui.writer(), c.verbose)
+
+	// Resolving a playlist reads every track's page and then looks up tags,
+	// which takes a while; show both steps rather than a silent terminal.
+	labels := map[string]string{
+		"spotify": fmt.Sprintf("Reading %s from Spotify", ref.Kind),
+		"tags":    "Looking up tags on Deezer",
+	}
+	phases := map[string]phaseUI{}
+	stepOf := func(step string) phaseUI {
+		ph, ok := phases[step]
+		if !ok {
+			for _, prev := range phases {
+				prev.finish()
+			}
+			ph = rep.ui.phase(labels[step])
+			phases[step] = ph
+		}
+		return ph
+	}
+	if ref.Kind != spotify.KindPlaylist {
+		stepOf("spotify")
+	}
+	col, err := resolveMetadata(ctx, cfg, ref, func(step string, done, total int) {
+		stepOf(step).set(done, total)
+		rep.reading(step, done, total)
+	})
+	for _, ph := range phases {
+		ph.finish()
+	}
 	if err != nil {
 		return rep.fatal(err)
 	}
@@ -126,10 +166,8 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	if ref.Kind == spotify.KindPlaylist && cfg.PlaylistFolder {
 		root = filepath.Join(cfg.Output, library.FolderName(col.Name, cfg.PlaylistFolderCase))
 	}
-	fmt.Fprintf(stderr, "%s %q: %d track(s) → %s\n", ref.Kind, col.Name, len(tracks), root)
+	rep.ui.log("%s %q: %d track(s) → %s", ref.Kind, col.Name, len(tracks), root)
 
-	rep.ui = chooseUI(cfg.Progress, stderr, c.json)
-	setupLogging(rep.ui.writer(), c.verbose)
 	d := newDownloader(cfg, root, rep)
 	failed := 0
 	for i, t := range tracks {
@@ -229,22 +267,7 @@ func (d *downloader) track(ctx context.Context, t spotify.Track, index, total in
 	defer os.RemoveAll(work)
 
 	emit("downloading")
-	// NDJSON gets a "downloading" event per 10% step: enough for a
-	// consumer's progress bar without flooding the pipe.
-	lastStep := 0
-	src, err := download.Fetch(ctx, d.ytd, best.URL, work, func(done, size int64) {
-		tu.progress(done, size)
-		if size <= 0 {
-			return
-		}
-		if step := int(done * 10 / size); step > lastStep {
-			lastStep = step
-			e := ev
-			e.Stage = "downloading"
-			e.Progress = float64(step) / 10
-			d.rep.emit(tu, e)
-		}
-	})
+	src, err := d.fetch(ctx, best.URL, work, tu, ev)
 	if err != nil {
 		return err
 	}
@@ -272,6 +295,45 @@ func (d *downloader) track(ctx context.Context, t spotify.Track, index, total in
 	ev.Warning = audio.QualityWarning(d.cfg.Format, d.cfg.Bitrate, src.Kbps, src.Codec)
 	emit("done")
 	return nil
+}
+
+// fetch downloads with retries: YouTube fails downloads now and then (a 403,
+// throttling) that work on the next try.
+func (d *downloader) fetch(ctx context.Context, url, work string, tu trackUI, ev event) (download.Source, error) {
+	for attempt := 0; ; attempt++ {
+		// NDJSON gets a "downloading" event per 10% step: enough for a
+		// consumer's progress bar without flooding the pipe.
+		lastStep := 0
+		src, err := download.Fetch(ctx, d.ytd, url, work, func(done, size int64) {
+			tu.progress(done, size)
+			if size <= 0 {
+				return
+			}
+			if step := int(done * 10 / size); step > lastStep {
+				lastStep = step
+				e := ev
+				e.Stage = "downloading"
+				e.Progress = float64(step) / 10
+				d.rep.emit(tu, e)
+			}
+		})
+		if err == nil || ctx.Err() != nil || errors.Is(err, ytdlp.ErrToolMissing) {
+			return src, err
+		}
+		if attempt >= d.cfg.DownloadRetries {
+			if attempt > 0 {
+				err = fmt.Errorf("%w (after %d attempts)", err, attempt+1)
+			}
+			return src, err
+		}
+		slog.DebugContext(ctx, "retrying download", "track", ev.Track, "attempt", attempt+2, "err", err)
+		tu.progress(0, 0)
+		select {
+		case <-time.After(time.Duration(attempt+1) * 2 * time.Second):
+		case <-ctx.Done():
+			return src, ctx.Err()
+		}
+	}
 }
 
 func trackName(t spotify.Track) string {

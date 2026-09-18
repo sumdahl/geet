@@ -108,3 +108,16 @@ func TestWebResolveErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestWebPlaylistProgress(t *testing.T) {
+	w := newTestWeb(t)
+	var calls [][2]int
+	w.OnProgress = func(done, total int) { calls = append(calls, [2]int{done, total}) }
+	if _, err := w.Resolve(context.Background(), Ref{KindPlaylist, "pl"}); err != nil {
+		t.Fatal(err)
+	}
+	want := [][2]int{{0, 4}, {1, 4}, {2, 4}, {3, 4}, {4, 4}}
+	if !reflect.DeepEqual(calls, want) {
+		t.Errorf("progress %v, want %v", calls, want)
+	}
+}

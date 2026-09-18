@@ -48,6 +48,8 @@ A Go CLI that takes a Spotify track, album or playlist URL, gets its metadata (s
 - `internal/download`: fetches the raw best audio only. It deliberately avoids `--extract-audio`, which ignores the requested bitrate when the codecs match.
 - `internal/audio`: one ffmpeg pass that converts or copies, tags and embeds the cover (see docs/01 §4 for the opus cover and argument-length details). Its round-trip tests run real ffmpeg on a generated tone and skip when ffmpeg is missing.
 - `cmd/spotify-dl/download.go`: the per-track stages and the NDJSON `event` type. Only ever add event fields; docs/03 has the schema.
+- Before downloads start, resolving a playlist is slow (about 1s of page reads per track, then the Deezer lookups). `resolveMetadata` reports both steps, which drive `ui.phase` lines and NDJSON `reading` events.
+- Downloads retry `download_retries` times (default 2), because YouTube fails transiently (403s, throttling). yt-dlp errors lead with yt-dlp's own reason so it survives truncation in the display.
 - `cmd/spotify-dl/ui.go`: the stderr display, using mpb bars (`barUI`) in a terminal and plain lines (`plainUI`) otherwise.
   - A finished track's bar is removed and a permanent result line is logged above the live area, because mpb never draws a bar that completes before its first refresh.
   - Never call into a `*mpb.Bar` while holding `barTrack.mu`: the render goroutine takes that lock in `status`.

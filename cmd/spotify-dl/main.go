@@ -156,14 +156,22 @@ func setupLogging(w io.Writer, verbose bool) {
 // resolveMetadata uses the official API when credentials are configured.
 // Otherwise it reads Spotify's public pages and fills in ISRC and disc numbers
 // from Deezer, which is best effort: a failed lookup only costs those tags.
-func resolveMetadata(ctx context.Context, cfg config.Config, ref spotify.Ref) (spotify.Collection, error) {
+//
+// report, if set, is told how far each slow step has got: step "spotify"
+// while reading a playlist's tracks, then "tags" during the Deezer lookups.
+func resolveMetadata(ctx context.Context, cfg config.Config, ref spotify.Ref, report func(step string, done, total int)) (spotify.Collection, error) {
+	if report == nil {
+		report = func(string, int, int) {}
+	}
 	if cfg.HasAPICredentials() {
 		slog.DebugContext(ctx, "metadata source: Spotify Web API")
 		return spotify.NewAPI(cfg.Spotify.ClientID, cfg.Spotify.ClientSecret).Resolve(ctx, ref)
 	}
 
 	slog.DebugContext(ctx, "metadata source: Spotify public pages + Deezer")
-	col, err := spotify.NewWeb("").Resolve(ctx, ref)
+	web := spotify.NewWeb("")
+	web.OnProgress = func(done, total int) { report("spotify", done, total) }
+	col, err := web.Resolve(ctx, ref)
 	if err != nil {
 		return spotify.Collection{}, err
 	}
@@ -173,10 +181,12 @@ func resolveMetadata(ctx context.Context, cfg config.Config, ref spotify.Ref) (s
 		err = dz.EnrichAlbum(ctx, col.Tracks)
 	} else {
 		for i := range col.Tracks {
+			report("tags", i, len(col.Tracks))
 			if err = dz.EnrichTrack(ctx, &col.Tracks[i]); err != nil {
 				break
 			}
 		}
+		report("tags", len(col.Tracks), len(col.Tracks))
 	}
 	if err != nil {
 		if ctx.Err() != nil {

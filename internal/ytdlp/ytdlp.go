@@ -73,9 +73,20 @@ func (r Runner) RunLines(ctx context.Context, onLine func(string), args ...strin
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return fmt.Errorf("yt-dlp: %w: %s", err, lastLine(stderr.String()))
+		// Lead with yt-dlp's own explanation: it is what a one-line display
+		// has room for, and "exit status 1" says nothing.
+		return fmt.Errorf("yt-dlp: %s (%w)", reason(stderr.String()), err)
 	}
 	return sc.Err()
+}
+
+func reason(stderr string) string {
+	line := lastLine(stderr)
+	line = strings.TrimPrefix(line, "ERROR: ")
+	if line == "" {
+		return "failed without an error message"
+	}
+	return line
 }
 
 func lastLine(s string) string {

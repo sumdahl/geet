@@ -42,6 +42,10 @@ type Web struct {
 	http    *http.Client
 	baseURL string
 
+	// OnProgress, if set, is called as a playlist's tracks are read, one
+	// page lookup per track, which is the slow part of resolving a playlist.
+	OnProgress func(done, total int)
+
 	mu     sync.Mutex
 	albums map[string]*webAlbum
 }
@@ -168,7 +172,10 @@ func (w *Web) Playlist(ctx context.Context, id string) (string, []Track, error) 
 	}
 
 	var tracks []Track
-	for _, it := range e.TrackList {
+	for i, it := range e.TrackList {
+		if w.OnProgress != nil {
+			w.OnProgress(i, len(e.TrackList))
+		}
 		if it.EntityType != "" && it.EntityType != "track" {
 			slog.DebugContext(ctx, "skipping non-track item", "playlist", id, "type", it.EntityType, "title", it.Title)
 			continue
@@ -182,6 +189,9 @@ func (w *Web) Playlist(ctx context.Context, id string) (string, []Track, error) 
 			return "", nil, err
 		}
 		tracks = append(tracks, t)
+	}
+	if w.OnProgress != nil {
+		w.OnProgress(len(e.TrackList), len(e.TrackList))
 	}
 	return e.Name, tracks, nil
 }

@@ -10,6 +10,9 @@ as a stable API even before the plugin exists.
   per line) on stdout for multi-track/streaming operations; nothing else
   goes to stdout. Human-readable progress/logs go to stderr only, so the
   two never mix.
+- Before any track starts, resolving the link emits `reading` events
+  (no `track`; `step`, `index`, `total`) so a long playlist shows progress.
+  Consumers must ignore stages and fields they don't know.
 - `spotify-dl download <url> --json` → one NDJSON line per track as it
   crosses each stage: `resolved → downloading → tagging → done`, or
   `failed` at any point. A track whose file already exists goes straight to
@@ -31,6 +34,7 @@ as a stable API even before the plugin exists.
   | `youtube_url` | from `resolved` on |
   | `skipped` | `done` for an existing file |
   | `warning` | `done`, when the requested format/bitrate can't beat YouTube's source (FLAC, or a bitrate >10% above it) |
+  | `step` | `reading` only: `spotify` (reading a playlist's tracks), then `tags` (Deezer lookups); `index`/`total` count tracks done |
   | `progress` | repeated `downloading` events, one per 10% step: `0.1` … `1` (the first `downloading` event has none) |
 
   Fields are only ever added, never renamed or removed; consumers must
