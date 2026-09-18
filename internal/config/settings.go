@@ -33,7 +33,7 @@ func (c *Config) Settings() []Setting {
 		{Key: "progress", Usage: "animated progress bars: auto (only in a terminal, and not with --json), always or never", ptr: &c.Progress},
 		{Key: "download_retries", Usage: "extra attempts when a YouTube download fails (it is often a temporary 403 or throttling)", ptr: &c.DownloadRetries},
 		{Key: "jobs", Usage: "concurrent downloads", ptr: &c.Jobs},
-		{Key: "resolve_jobs", Usage: "concurrent YouTube lookups", ptr: &c.ResolveJobs},
+		{Key: "resolve_jobs", Usage: "songs read from Spotify and looked up on YouTube at once; higher reads big playlists faster but makes Spotify rate-limit sooner", ptr: &c.ResolveJobs},
 		{Key: "spotify.client_id", Usage: "Spotify Web API client ID (optional; needs Premium)", ptr: &c.Spotify.ClientID},
 		{Key: "spotify.client_secret", Usage: "Spotify Web API client secret", Secret: true, ptr: &c.Spotify.ClientSecret},
 		{Key: "youtube.search_query", Usage: "YouTube search text; placeholders: {artists} {artist} {title} {album}", ptr: &c.YouTube.SearchQuery},

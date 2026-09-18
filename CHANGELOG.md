@@ -7,6 +7,12 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Changed
+- The README no longer recommends `resolve_jobs = 24`. Measured on a
+  42-song playlist, 24 wasn't faster than the default 8, and reading many
+  Spotify pages at once is what causes rate limits. `resolve_jobs`'s help
+  now says what it controls.
+
 ## [0.3.0] - 2026-09-18
 
 ### Added

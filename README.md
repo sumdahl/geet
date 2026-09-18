@@ -156,10 +156,11 @@ Songs download 4 at a time by default. On a good connection, more is faster: 16 
 
 ```toml
 jobs = 16          # parallel downloads
-resolve_jobs = 24  # parallel metadata reads and YouTube searches (keep it above jobs)
 ```
 
 Past your bandwidth, more jobs just split it.
+
+`resolve_jobs` (default 8) is how many songs are read from Spotify and looked up on YouTube at once. Leave it at 8. On a 42-song playlist with `jobs = 16`, `resolve_jobs = 24` read the playlist faster (3.2 s against 5.8 s) but didn't finish sooner (40 s against 33 s), because downloading takes most of the time. Reading many Spotify pages at once is also what makes Spotify rate-limit you (HTTP 429). geet waits that out, but the waits cost more than the extra parallelism saves. Raise it only for long lists on a connection where reading is visibly the slow part.
 
 **"YouTube wants you to confirm you're not a bot"** means YouTube is limiting your IP, usually after many downloads in a short time. geet shows the fix once and doesn't retry those songs, since retrying only prolongs the block. Waiting an hour and lowering `jobs` usually clears it. The lasting fix is to send your browser's YouTube sign-in:
 
@@ -248,7 +249,7 @@ Tools
   ✓ fzf        0.74.3 (search menu)
 
 Setup
-  ✓ config     ~/.config/geet/config.toml · opus · jobs 16, resolve_jobs 24
+  ✓ config     ~/.config/geet/config.toml · opus · jobs 16, resolve_jobs 8
   ✓ library    ~/Music writable, 291.1 GB free
   ✓ index      219 songs known
 
@@ -325,7 +326,7 @@ client_secret = "..."
 | `progress` | `--progress` | string | `auto` | Animated bars: `auto` (in a terminal, not with `--json`), `always` or `never` |
 | `download_retries` | `--download-retries` | int | `2` | Extra attempts when YouTube refuses a download |
 | `jobs` | `--jobs` | int | `4` | Parallel downloads |
-| `resolve_jobs` | `--resolve-jobs` | int | `8` | Parallel metadata reads and YouTube searches |
+| `resolve_jobs` | `--resolve-jobs` | int | `8` | Songs read from Spotify and looked up on YouTube at once. Higher risks Spotify rate limits. |
 | `spotify.client_id` | `--spotify-client-id` | string | | Optional Web API credentials (Premium only) |
 | `spotify.client_secret` | `--spotify-client-secret` | string | | |
 | `youtube.search_query` | `--youtube-search-query` | string | `{artists} - {title}` | YouTube search text |
