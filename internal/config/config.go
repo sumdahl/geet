@@ -58,6 +58,7 @@ type Config struct {
 type Spotify struct {
 	ClientID     string `toml:"client_id" json:"client_id"`
 	ClientSecret string `toml:"client_secret" json:"client_secret"`
+	CacheDays    int    `toml:"cache_days" json:"cache_days"`
 }
 
 type YouTube struct {
@@ -127,9 +128,10 @@ func Default() Config {
 			MaxDurationDiff: Duration{10 * time.Second},
 			ExtraArgs:       []string{},
 		},
-		Search: Search{Country: "US", Limit: 15, Picker: "auto", Confirm: true},
-		Watch:  Watch{Interval: Duration{time.Second}, Notify: true},
-		Tools:  Tools{YtDlp: "yt-dlp", FFmpeg: "ffmpeg", FFprobe: "ffprobe", WlPaste: "wl-paste", NotifySend: "notify-send"},
+		Spotify: Spotify{CacheDays: 30},
+		Search:  Search{Country: "US", Limit: 15, Picker: "auto", Confirm: true},
+		Watch:   Watch{Interval: Duration{time.Second}, Notify: true},
+		Tools:   Tools{YtDlp: "yt-dlp", FFmpeg: "ffmpeg", FFprobe: "ffprobe", WlPaste: "wl-paste", NotifySend: "notify-send"},
 	}
 }
 
@@ -225,6 +227,9 @@ func (c Config) Validate() error {
 	}
 	if c.Jobs < 1 {
 		errs = append(errs, fmt.Errorf("jobs must be at least 1, got %d", c.Jobs))
+	}
+	if c.Spotify.CacheDays < 0 || c.Spotify.CacheDays > 365 {
+		errs = append(errs, fmt.Errorf("spotify.cache_days must be 0-365 (0 turns the cache off), got %d", c.Spotify.CacheDays))
 	}
 	if c.ResolveJobs < 1 {
 		errs = append(errs, fmt.Errorf("resolve_jobs must be at least 1, got %d", c.ResolveJobs))

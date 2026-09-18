@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"regexp"
 	"runtime/debug"
 	"slices"
@@ -18,6 +19,7 @@ import (
 	"sync"
 	"syscall"
 	"text/tabwriter"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -299,9 +301,8 @@ func resolveMetadata(ctx context.Context, cfg config.Config, ref spotify.Ref, re
 	}
 
 	slog.DebugContext(ctx, "metadata source: Spotify public pages + Deezer")
-	web := spotify.NewWeb("")
-	web.Workers = cfg.ResolveJobs
-	web.OnProgress = func(done, total int) { report("spotify", done, total) }
+	web := newWeb(ctx, cfg, report)
+	defer saveCache(ctx, web)
 	col, err = web.Resolve(ctx, ref)
 	if err != nil {
 		return spotify.Collection{}, false, err
@@ -319,6 +320,32 @@ func resolveMetadata(ctx context.Context, cfg config.Config, ref spotify.Ref, re
 	}
 	report("tags", len(col.Tracks), len(col.Tracks))
 	return col, false, nil
+}
+
+// newWeb is the keyless Spotify reader, with the metadata cache
+// (spotify.cache_days) unless it's turned off.
+func newWeb(ctx context.Context, cfg config.Config, report func(step string, done, total int)) *spotify.Web {
+	web := spotify.NewWeb("")
+	web.Workers = cfg.ResolveJobs
+	web.OnProgress = func(done, total int) { report("spotify", done, total) }
+	if cfg.Spotify.CacheDays > 0 {
+		if dir, err := os.UserCacheDir(); err == nil {
+			web.Cache = spotify.LoadCache(filepath.Join(dir, "geet", "spotify.json"), time.Duration(cfg.Spotify.CacheDays)*24*time.Hour)
+			slog.DebugContext(ctx, "spotify cache", "songs", web.Cache.Len())
+		}
+	}
+	return web
+}
+
+// saveCache keeps what this run read, even when it failed partway: the songs
+// read so far needn't be read again.
+func saveCache(ctx context.Context, web *spotify.Web) {
+	if web.Cache == nil {
+		return
+	}
+	if err := web.Cache.Save(); err != nil {
+		slog.WarnContext(ctx, "couldn't save the Spotify metadata cache", "err", err)
+	}
 }
 
 // readLinks reads song links from r: one per line or separated by spaces,
@@ -376,9 +403,8 @@ func resolveList(ctx context.Context, cfg config.Config, links []string, report 
 		}
 	}
 
-	web := spotify.NewWeb("")
-	web.Workers = cfg.ResolveJobs
-	web.OnProgress = func(done, total int) { report("spotify", done, total) }
+	web := newWeb(ctx, cfg, report)
+	defer saveCache(ctx, web)
 	found, skipped, err := web.Tracks(ctx, spotifyIDs)
 	if err != nil {
 		return nil, err

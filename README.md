@@ -162,6 +162,8 @@ Past your bandwidth, more jobs just split it.
 
 `resolve_jobs` (default 8) is how many songs are read from Spotify and looked up on YouTube at once. Leave it at 8. On a 42-song playlist with `jobs = 16`, `resolve_jobs = 24` read the playlist faster (3.2 s against 5.8 s) but didn't finish sooner (40 s against 33 s), because downloading takes most of the time. Reading many Spotify pages at once is also what makes Spotify rate-limit you (HTTP 429). geet waits that out, but the waits cost more than the extra parallelism saves. Raise it only for long lists on a connection where reading is visibly the slow part.
 
+Songs read from Spotify are remembered for 30 days (`spotify.cache_days`, in `~/.cache/geet/spotify.json`), so reading a playlist again is almost instant: re-reading that 42-song playlist took 0.4 s instead of 6.2 s. Re-running a playlist to pick up new songs, or to retry skipped ones, then asks Spotify only about the songs it hasn't seen. Requests are also spread out to at most 10 a second, because bursts are what Spotify rate-limits. Set `spotify.cache_days = 0` to always read fresh metadata.
+
 **"YouTube wants you to confirm you're not a bot"** means YouTube is limiting your IP, usually after many downloads in a short time. geet shows the fix once and doesn't retry those songs, since retrying only prolongs the block. Waiting an hour and lowering `jobs` usually clears it. The lasting fix is to send your browser's YouTube sign-in:
 
 ```toml
@@ -328,6 +330,7 @@ client_secret = "..."
 | `jobs` | `--jobs` | int | `4` | Parallel downloads |
 | `resolve_jobs` | `--resolve-jobs` | int | `8` | Songs read from Spotify and looked up on YouTube at once. Higher risks Spotify rate limits. |
 | `spotify.client_id` | `--spotify-client-id` | string | | Optional Web API credentials (Premium only) |
+| `spotify.cache_days` | `--spotify-cache-days` | int | `30` | Days to remember songs read from Spotify's pages. `0` turns the cache off. |
 | `spotify.client_secret` | `--spotify-client-secret` | string | | |
 | `youtube.search_query` | `--youtube-search-query` | string | `{artists} - {title}` | YouTube search text |
 | `youtube.fallback_query` | `--youtube-fallback-query` | string | `{artists} - {title} audio` | Second search when nothing matches; empty disables it |

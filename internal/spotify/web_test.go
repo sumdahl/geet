@@ -13,7 +13,16 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"golang.org/x/time/rate"
 )
+
+// unpaced drops the request pacing, which would only slow the tests down;
+// TestWebPacesRequests covers it.
+func unpaced(w *Web) *Web {
+	w.pace = rate.NewLimiter(rate.Inf, 0)
+	return w
+}
 
 func newTestWeb(t *testing.T) *Web {
 	t.Helper()
@@ -51,7 +60,7 @@ func newTestWeb(t *testing.T) *Web {
 		w.Write(body)
 	}))
 	t.Cleanup(srv.Close)
-	return NewWeb(srv.URL)
+	return unpaced(NewWeb(srv.URL))
 }
 
 func TestWebResolve(t *testing.T) {
@@ -154,7 +163,7 @@ func TestWebRetriesRateLimit(t *testing.T) {
 		rw.Write(body)
 	}))
 	defer srv.Close()
-	w := NewWeb(srv.URL)
+	w := unpaced(NewWeb(srv.URL))
 	w.backoff = time.Millisecond
 	tracks, err := w.Album(context.Background(), "alb")
 	if err != nil {
@@ -193,7 +202,7 @@ func TestWebPlaylistTruncated(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	w := NewWeb(srv.URL)
+	w := unpaced(NewWeb(srv.URL))
 	w.Workers = 8
 	col, err := w.Resolve(context.Background(), Ref{KindPlaylist, "big"})
 	if err != nil {
@@ -266,7 +275,7 @@ func TestWebTracksRateLimited(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	w := NewWeb(srv.URL)
+	w := unpaced(NewWeb(srv.URL))
 	w.Workers = 4
 	w.backoff = time.Millisecond
 	got, skipped, err := w.Tracks(context.Background(), []string{"t1", "t2", "always-limited", "t1"})
