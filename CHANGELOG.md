@@ -7,6 +7,25 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Added
+- `--tracks <file|->` downloads a list of song links, one per line, for
+  example `wl-paste | geet download <playlist> --tracks -` after selecting
+  every song in Spotify (Ctrl+A, Ctrl+C). This is how playlists over
+  Spotify's 100-song public limit are downloaded in full. The playlist link
+  names the folder, duplicates in the list are dropped, and `#` lines are
+  comments.
+- A playlist larger than its public page is detected ("100 of the 201
+  songs"), with the exact command to get the rest.
+
+### Changed
+- YouTube's "confirm you're not a bot" block gets one short message with
+  the fix (`youtube.cookies_from_browser`), and those downloads aren't
+  retried, since retrying only prolongs the block.
+- `geet doctor` checks that YouTube serves audio, not only search results,
+  because the bot check blocks downloads while search keeps working.
+- Warnings print as plain `warning: …` lines instead of timestamped log
+  records. `-v` still shows everything.
+
 ## [0.2.0] - 2026-09-18
 
 ### Added

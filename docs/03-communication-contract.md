@@ -10,6 +10,8 @@ as a stable API even before the plugin exists.
   per line) on stdout for multi-track/streaming operations; nothing else
   goes to stdout. Human-readable progress/logs go to stderr only, so the
   two never mix.
+- When a playlist is larger than Spotify's public page shows, a `reading`
+  event carries a `warning` naming the counts and the `--tracks` command.
 - Before any track starts, resolving the link emits `reading` events
   (no `track`; `step`, `index`, `total`) so a long playlist shows progress.
   Consumers must ignore stages and fields they don't know.

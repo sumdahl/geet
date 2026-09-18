@@ -32,6 +32,10 @@ type Collection struct {
 	Ref    Ref
 	Name   string // the track's title, the album's or the playlist's name
 	Tracks []Track
+	// Total is how many items the source says the collection has, when
+	// that's more than it let us read: Spotify's public playlist page lists
+	// at most 100. Zero when everything was read.
+	Total int
 }
 
 func collect(ref Ref, name string, tracks []Track) Collection {

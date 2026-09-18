@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,7 +13,9 @@ import (
 	"os/signal"
 	"regexp"
 	"runtime/debug"
+	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"text/tabwriter"
 
@@ -20,6 +23,7 @@ import (
 
 	"github.com/sumdahl/geet/internal/config"
 	"github.com/sumdahl/geet/internal/deezer"
+	"github.com/sumdahl/geet/internal/itunes"
 	"github.com/sumdahl/geet/internal/spotify"
 )
 
@@ -177,11 +181,11 @@ func (c *cli) load() (config.Config, string, error) {
 	return cfg, path, err
 }
 
+var pseudoVersion = regexp.MustCompile(`\d{14}-[0-9a-f]{12}`)
+
 // versionString is "geet v0.1.0 (80f7f43, 2026-09-18)": the release, plus
 // the exact commit and its date from the build's embedded VCS info, so a bug
 // report pins down the code even between releases.
-var pseudoVersion = regexp.MustCompile(`\d{14}-[0-9a-f]{12}`)
-
 func versionString() string {
 	v := version
 	var rev, date string
@@ -223,13 +227,58 @@ func versionString() string {
 	return fmt.Sprintf("geet %s (%s)", v, strings.Join(detail, ", "))
 }
 
+// setupLogging sends log records to w: every detail with -v, otherwise only
+// warnings and errors, as plain "warning: …" lines rather than slog's
+// timestamped key=value format.
 func setupLogging(w io.Writer, verbose bool) {
-	level := slog.LevelInfo
 	if verbose {
-		level = slog.LevelDebug
+		slog.SetDefault(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelDebug})))
+		return
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level})))
+	slog.SetDefault(slog.New(&briefHandler{w: w}))
 }
+
+// briefHandler prints "warning: skipping a track Spotify no longer has (id=…)".
+type briefHandler struct {
+	mu    sync.Mutex
+	w     io.Writer
+	attrs []slog.Attr
+}
+
+func (h *briefHandler) Enabled(_ context.Context, l slog.Level) bool { return l >= slog.LevelWarn }
+
+func (h *briefHandler) Handle(_ context.Context, r slog.Record) error {
+	var b strings.Builder
+	if r.Level >= slog.LevelError {
+		b.WriteString("error: ")
+	} else {
+		b.WriteString("warning: ")
+	}
+	b.WriteString(r.Message)
+	var attrs []string
+	add := func(a slog.Attr) bool {
+		attrs = append(attrs, a.Key+"="+a.Value.String())
+		return true
+	}
+	for _, a := range h.attrs {
+		add(a)
+	}
+	r.Attrs(add)
+	if len(attrs) > 0 {
+		b.WriteString(" (" + strings.Join(attrs, ", ") + ")")
+	}
+	b.WriteByte('\n')
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	_, err := io.WriteString(h.w, b.String())
+	return err
+}
+
+func (h *briefHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &briefHandler{w: h.w, attrs: append(slices.Clone(h.attrs), attrs...)}
+}
+
+func (h *briefHandler) WithGroup(string) slog.Handler { return h }
 
 // resolveMetadata reads the link's tracks: from the official API when
 // credentials are configured, otherwise from Spotify's public pages. Those
@@ -271,6 +320,98 @@ func resolveMetadata(ctx context.Context, cfg config.Config, ref spotify.Ref, re
 	}
 	report("tags", len(col.Tracks), len(col.Tracks))
 	return col, false, nil
+}
+
+// readLinks reads song links from r: one per line or separated by spaces,
+// as the Spotify app copies them after selecting songs and pressing Ctrl+C.
+// Blank lines and lines starting with # are ignored.
+func readLinks(r io.Reader) ([]string, error) {
+	var links []string
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		links = append(links, strings.Fields(line)...)
+	}
+	return links, sc.Err()
+}
+
+// resolveList reads the tracks behind a list of song links (Spotify links
+// or URIs, Apple Music song links, itunes:<id>), in the given order and
+// without repeats. It's how playlists over Spotify's 100-track public limit
+// are downloaded in full.
+func resolveList(ctx context.Context, cfg config.Config, links []string, report func(step string, done, total int)) ([]spotify.Track, error) {
+	type slot struct{ spotifyID, itunesID string }
+	var slots []slot
+	var spotifyIDs []string
+	seen := map[string]bool{}
+	for i, link := range links {
+		if itunes.IsRef(link) {
+			id, err := itunes.ParseRef(link)
+			if err != nil {
+				return nil, fmt.Errorf("link %d: %w", i+1, err)
+			}
+			if !seen["itunes:"+id] {
+				seen["itunes:"+id] = true
+				slots = append(slots, slot{itunesID: id})
+			}
+			continue
+		}
+		ref, err := spotify.ParseURL(link)
+		if errors.Is(err, spotify.ErrInvalidURL) && strings.HasPrefix(link, "spotify:episode:") {
+			continue // a podcast episode copied along with the songs
+		}
+		if err != nil {
+			return nil, fmt.Errorf("link %d: %w", i+1, err)
+		}
+		if ref.Kind != spotify.KindTrack {
+			return nil, fmt.Errorf("link %d is %s link, but --tracks takes song links: select the songs in Spotify and press Ctrl+C", i+1, articled(string(ref.Kind)))
+		}
+		if !seen[ref.ID] {
+			seen[ref.ID] = true
+			slots = append(slots, slot{spotifyID: ref.ID})
+			spotifyIDs = append(spotifyIDs, ref.ID)
+		}
+	}
+
+	web := spotify.NewWeb("")
+	web.Workers = cfg.ResolveJobs
+	web.OnProgress = func(done, total int) { report("spotify", done, total) }
+	found, err := web.Tracks(ctx, spotifyIDs)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]spotify.Track, len(found))
+	for _, t := range found {
+		byID[t.ID] = t
+	}
+
+	var tracks []spotify.Track
+	it := itunes.New("", cfg.Search.Country)
+	for _, s := range slots {
+		if s.itunesID != "" {
+			t, err := it.Lookup(ctx, s.itunesID)
+			if err != nil {
+				return nil, err
+			}
+			tracks = append(tracks, t)
+			continue
+		}
+		if t, ok := byID[s.spotifyID]; ok { // missing: gone from Spotify, already warned
+			tracks = append(tracks, t)
+		}
+	}
+	return tracks, nil
+}
+
+func articled(word string) string {
+	if strings.ContainsRune("aeiou", rune(word[0])) {
+		return "an " + word
+	}
+	return "a " + word
 }
 
 func configCmd(args []string, stdout, stderr io.Writer) int {

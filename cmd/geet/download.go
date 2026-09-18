@@ -82,6 +82,17 @@ func (r *reporter) emit(tu trackUI, e event) {
 	}
 }
 
+// notice tells the user something they should act on, once: as a
+// "warning" line for humans and a "reading" event with a warning in NDJSON.
+func (r *reporter) notice(msg string) {
+	r.mu.Lock()
+	if r.json != nil {
+		r.json.Encode(event{Stage: "reading", Warning: msg})
+	}
+	r.mu.Unlock()
+	r.ui.log("%s", r.ui.highlight("warning: "+msg))
+}
+
 // reading reports progress resolving the link, before any track starts.
 func (r *reporter) reading(step string, done, total int) {
 	r.mu.Lock()
@@ -106,6 +117,7 @@ func (r *reporter) fatal(err error) int {
 
 func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	c := newCLI("download", "download [flags] <spotify-url | apple-music-url | itunes:<id>>", stderr)
+	tracksFrom := c.fs.String("tracks", "", "download these song links instead of the link's own list: a file, or - for stdin (e.g. wl-paste | geet download <playlist> --tracks -); for playlists over Spotify's 100-song public limit")
 	positional, err := c.parse(args)
 	if errors.Is(err, flag.ErrHelp) {
 		return exitOK
@@ -113,7 +125,7 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	if err != nil {
 		return exitFatal
 	}
-	if len(positional) != 1 {
+	if len(positional) > 1 || (len(positional) == 0 && *tracksFrom == "") {
 		c.fs.Usage()
 		return exitFatal
 	}
@@ -121,7 +133,14 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	if err != nil {
 		return rep.fatal(err)
 	}
-	link := positional[0]
+	link := ""
+	if len(positional) == 1 {
+		link = positional[0]
+	}
+
+	if *tracksFrom != "" {
+		return downloadList(ctx, c, cfg, rep, link, *tracksFrom, stderr)
+	}
 
 	if itunes.IsRef(link) {
 		col, err := lookupITunes(ctx, cfg, link)
@@ -140,38 +159,112 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	rep.ui = chooseUI(cfg.Progress, stderr, c.json)
 	setupLogging(rep.ui.writer(), c.verbose)
 
-	// Resolving a playlist reads every track's page and then looks up tags,
-	// which takes a while; show both steps rather than a silent terminal.
-	labels := map[string]string{
-		"spotify": fmt.Sprintf("Reading %s from Spotify", ref.Kind),
-		"tags":    "Looking up tags on Deezer",
-	}
-	phases := map[string]phaseUI{}
-	stepOf := func(step string) phaseUI {
-		ph, ok := phases[step]
-		if !ok {
-			for _, prev := range phases {
-				prev.finish()
-			}
-			ph = rep.ui.phase(labels[step])
-			phases[step] = ph
-		}
-		return ph
-	}
+	steps := newSteps(rep, fmt.Sprintf("Reading %s from Spotify", ref.Kind))
 	if ref.Kind != spotify.KindPlaylist {
-		stepOf("spotify")
+		steps.show("spotify")
 	}
-	col, lateTags, err := resolveMetadata(ctx, cfg, ref, func(step string, done, total int) {
-		stepOf(step).set(done, total)
-		rep.reading(step, done, total)
-	})
-	for _, ph := range phases {
-		ph.finish()
-	}
+	col, lateTags, err := resolveMetadata(ctx, cfg, ref, steps.report)
+	steps.finish()
 	if err != nil {
 		return rep.fatal(err)
 	}
+	if col.Total > len(col.Tracks) {
+		notice := fmt.Sprintf("Spotify's public page shows only %d of the %d songs in this playlist.", len(col.Tracks), col.Total)
+		rep.notice(notice + "\nTo download all of them: in the Spotify app open the playlist, press Ctrl+A then Ctrl+C, then run:\n  wl-paste | geet download \"" + link + "\" --tracks -")
+	}
 	return runDownload(ctx, c, cfg, rep, col, lateTags, stderr)
+}
+
+// downloadList downloads the song links read from `from` (a file, or - for
+// stdin). A playlist or album link, if given, only names the folder and
+// labels the run; its own (possibly truncated) track list isn't read.
+func downloadList(ctx context.Context, c *cli, cfg config.Config, rep *reporter, link, from string, stderr io.Writer) int {
+	in := io.Reader(os.Stdin)
+	if from != "-" {
+		f, err := os.Open(from)
+		if err != nil {
+			return rep.fatal(err)
+		}
+		defer f.Close()
+		in = f
+	}
+	links, err := readLinks(in)
+	if err != nil {
+		return rep.fatal(fmt.Errorf("reading --tracks: %w", err))
+	}
+	if len(links) == 0 {
+		return rep.fatal(errors.New("--tracks: no song links found (select songs in Spotify and press Ctrl+C first)"))
+	}
+
+	col := spotify.Collection{Ref: spotify.Ref{Kind: kindList}, Name: "--tracks"}
+	if link != "" {
+		ref, err := spotify.ParseURL(link)
+		if err != nil {
+			return rep.fatal(err)
+		}
+		if ref.Kind == spotify.KindTrack {
+			return rep.fatal(errors.New("with --tracks, give a playlist or album link (it names the folder), or no link"))
+		}
+		name, err := spotify.NewWeb("").Name(ctx, ref)
+		if err != nil {
+			return rep.fatal(err)
+		}
+		col.Ref, col.Name = ref, name
+	}
+
+	rep.ui = chooseUI(cfg.Progress, stderr, c.json)
+	setupLogging(rep.ui.writer(), c.verbose)
+	steps := newSteps(rep, fmt.Sprintf("Reading %d songs from Spotify", len(links)))
+	col.Tracks, err = resolveList(ctx, cfg, links, steps.report)
+	steps.finish()
+	if err != nil {
+		return rep.fatal(err)
+	}
+	return runDownload(ctx, c, cfg, rep, col, true, stderr)
+}
+
+// kindList labels a collection read from --tracks without a playlist link:
+// it downloads like single tracks (no playlist folder).
+const kindList spotify.Kind = "list"
+
+// steps shows the slow metadata steps as progress lines ("spotify" while
+// reading tracks, "tags" during Deezer lookups) and reports them as NDJSON
+// "reading" events, so a long playlist never looks stuck.
+type steps struct {
+	rep    *reporter
+	labels map[string]string
+	phases map[string]phaseUI
+}
+
+func newSteps(rep *reporter, readingLabel string) *steps {
+	return &steps{
+		rep:    rep,
+		labels: map[string]string{"spotify": readingLabel, "tags": "Looking up tags on Deezer"},
+		phases: map[string]phaseUI{},
+	}
+}
+
+func (s *steps) show(step string) phaseUI {
+	ph, ok := s.phases[step]
+	if !ok {
+		for _, prev := range s.phases {
+			prev.finish()
+		}
+		ph = s.rep.ui.phase(s.labels[step])
+		s.phases[step] = ph
+	}
+	return ph
+}
+
+func (s *steps) report(step string, done, total int) {
+	s.show(step).set(done, total)
+	s.rep.reading(step, done, total)
+}
+
+func (s *steps) finish() {
+	for _, ph := range s.phases {
+		ph.finish()
+	}
 }
 
 // prepare loads the config and checks for the tools every download needs.
@@ -507,7 +600,7 @@ func (d *downloader) fetch(ctx context.Context, url, work string, tu trackUI, ev
 				d.rep.emit(tu, e)
 			}
 		})
-		if err == nil || ctx.Err() != nil || errors.Is(err, ytdlp.ErrToolMissing) {
+		if err == nil || ctx.Err() != nil || errors.Is(err, ytdlp.ErrToolMissing) || errors.Is(err, ytdlp.ErrBotCheck) {
 			return src, err
 		}
 		if attempt >= d.cfg.DownloadRetries {

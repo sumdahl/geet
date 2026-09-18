@@ -24,7 +24,8 @@ const (
 	// Spotify server-renders the music:* meta tags (album, track number,
 	// release date) only for link-preview crawlers, not for browsers.
 	crawlerUA = "facebookexternalhit/1.1"
-	// The public playlist embed lists at most this many tracks.
+	// The public playlist embed lists at most this many tracks, whatever the
+	// playlist's size; offset parameters are ignored.
 	embedPlaylistCap = 100
 	// Spotify separates artists in embed subtitles with a comma and a no-break
 	// space, which keeps names like "Tyler, The Creator" intact.
@@ -85,8 +86,15 @@ func (w *Web) Resolve(ctx context.Context, ref Ref) (Collection, error) {
 		tracks, err := w.Album(ctx, ref.ID)
 		return collect(ref, "", tracks), err
 	case KindPlaylist:
-		name, tracks, err := w.Playlist(ctx, ref.ID)
-		return collect(ref, name, tracks), err
+		name, tracks, truncated, err := w.Playlist(ctx, ref.ID)
+		col := collect(ref, name, tracks)
+		if err == nil && truncated {
+			// Best effort: without the size, the caller still has 100 tracks.
+			if n, sizeErr := w.PlaylistSize(ctx, ref.ID); sizeErr == nil && n > len(tracks) {
+				col.Total = n
+			}
+		}
+		return col, err
 	default:
 		return Collection{}, fmt.Errorf("%w: unsupported type %q", ErrInvalidURL, ref.Kind)
 	}
@@ -167,18 +175,30 @@ func (w *Web) Album(ctx context.Context, id string) ([]Track, error) {
 	return tracks, nil
 }
 
-func (w *Web) Playlist(ctx context.Context, id string) (string, []Track, error) {
+// Playlist reads a playlist's name and tracks. truncated reports that the
+// public page cut the list off at embedPlaylistCap; PlaylistSize says how
+// many there really are.
+func (w *Web) Playlist(ctx context.Context, id string) (name string, tracks []Track, truncated bool, err error) {
 	e, err := w.embed(ctx, KindPlaylist, id)
 	if err != nil {
-		return "", nil, fmt.Errorf("fetching playlist %s: %w", id, err)
+		return "", nil, false, fmt.Errorf("fetching playlist %s: %w", id, err)
 	}
-	if len(e.TrackList) >= embedPlaylistCap {
-		slog.WarnContext(ctx, "Spotify's public playlist view lists at most 100 tracks; any after that are skipped", "playlist", id)
+	var ids []string
+	for _, it := range e.TrackList {
+		if it.EntityType != "" && it.EntityType != "track" {
+			slog.DebugContext(ctx, "skipping non-track item", "playlist", id, "type", it.EntityType, "title", it.Title)
+			continue
+		}
+		ids = append(ids, itemID(it))
 	}
+	tracks, err = w.Tracks(ctx, ids)
+	return e.Name, tracks, len(e.TrackList) >= embedPlaylistCap, err
+}
 
-	// Read tracks in parallel, keeping playlist order: results[i] stays nil
-	// for an item that is skipped.
-	results := make([]*Track, len(e.TrackList))
+// Tracks reads each track by ID, Workers at a time, keeping the given order.
+// Tracks Spotify no longer has are skipped with a warning.
+func (w *Web) Tracks(ctx context.Context, ids []string) ([]Track, error) {
+	results := make([]*Track, len(ids))
 	var mu sync.Mutex
 	done := 0
 	progress := func() {
@@ -186,24 +206,20 @@ func (w *Web) Playlist(ctx context.Context, id string) (string, []Track, error) 
 		defer mu.Unlock()
 		done++
 		if w.OnProgress != nil {
-			w.OnProgress(done, len(e.TrackList))
+			w.OnProgress(done, len(ids))
 		}
 	}
 	if w.OnProgress != nil {
-		w.OnProgress(0, len(e.TrackList))
+		w.OnProgress(0, len(ids))
 	}
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(max(w.Workers, 1))
-	for i, it := range e.TrackList {
+	for i, id := range ids {
 		g.Go(func() error {
 			defer progress()
-			if it.EntityType != "" && it.EntityType != "track" {
-				slog.DebugContext(gctx, "skipping non-track item", "playlist", id, "type", it.EntityType, "title", it.Title)
-				return nil
-			}
-			t, err := w.Track(gctx, itemID(it))
+			t, err := w.Track(gctx, id)
 			if errors.Is(err, ErrNotFound) {
-				slog.WarnContext(gctx, "skipping unavailable track", "playlist", id, "title", it.Title)
+				slog.WarnContext(gctx, "skipping a track Spotify no longer has", "id", id)
 				return nil
 			}
 			if err != nil {
@@ -214,16 +230,53 @@ func (w *Web) Playlist(ctx context.Context, id string) (string, []Track, error) 
 		})
 	}
 	if err := g.Wait(); err != nil {
-		return "", nil, err
+		return nil, err
 	}
-
 	var tracks []Track
 	for _, t := range results {
 		if t != nil {
 			tracks = append(tracks, *t)
 		}
 	}
-	return e.Name, tracks, nil
+	return tracks, nil
+}
+
+var itemCount = regexp.MustCompile(`(\d[\d,]*) (?:items?|songs?)`)
+
+// PlaylistSize reads how many items a playlist has from its page's summary
+// ("Playlist · Sumiran · 201 items"), which, unlike the track list, isn't
+// capped.
+func (w *Web) PlaylistSize(ctx context.Context, id string) (int, error) {
+	body, err := w.fetch(ctx, w.baseURL+"/playlist/"+id, crawlerUA)
+	if err != nil {
+		return 0, err
+	}
+	for _, m := range metaRe.FindAllSubmatch(body, -1) {
+		if string(m[1]) != "og:description" {
+			continue
+		}
+		if c := itemCount.FindStringSubmatch(html.UnescapeString(string(m[2]))); c != nil {
+			return strconv.Atoi(strings.ReplaceAll(c[1], ",", ""))
+		}
+	}
+	return 0, fmt.Errorf("playlist %s: no item count: %w", id, ErrPageFormat)
+}
+
+// Name returns an album's or playlist's name from its public page, without
+// reading its tracks.
+func (w *Web) Name(ctx context.Context, ref Ref) (string, error) {
+	switch ref.Kind {
+	case KindAlbum, KindPlaylist:
+		e, err := w.embed(ctx, ref.Kind, ref.ID)
+		if err != nil {
+			return "", err
+		}
+		return e.Name, nil
+	case KindTrack:
+		t, err := w.Track(ctx, ref.ID)
+		return t.Title, err
+	}
+	return "", fmt.Errorf("%w: unsupported type %q", ErrInvalidURL, ref.Kind)
 }
 
 func (w *Web) album(ctx context.Context, id string) (*webAlbum, error) {

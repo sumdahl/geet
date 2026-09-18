@@ -405,14 +405,33 @@ func checkYouTube(ctx context.Context, cfg config.Config) Check {
 	cands, err := yt.Search(ctx, probeYouTubeQuery)
 	switch {
 	case err != nil:
-		c.Status, c.Detail = Fail, err.Error()
+		c.Status, c.Detail = Fail, "search: "+err.Error()
 		c.Fix = youtubeFix(err)
+		return c
 	case len(cands) == 0:
 		c.Status, c.Detail = Fail, "search returned nothing"
 		c.Fix = "update yt-dlp: sudo pacman -Syu yt-dlp"
-	default:
-		c.Status, c.Detail = OK, "search works"
+		return c
 	}
+	// Search can keep working while downloads are refused (the bot check
+	// guards the audio, not the results), so also ask for the audio stream's
+	// details, which runs the same checks as a download but saves nothing.
+	runner := ytdlp.Runner{
+		Binary:             cfg.Tools.YtDlp,
+		CookiesFile:        cfg.YouTube.CookiesFile,
+		CookiesFromBrowser: cfg.YouTube.CookiesFromBrowser,
+		ExtraArgs:          cfg.YouTube.ExtraArgs,
+	}
+	if _, err := runner.Run(ctx, "--simulate", "--no-playlist", "--no-warnings", "--format", "bestaudio", "--print", "format_id", "--", cands[0].URL); err != nil {
+		detail := err.Error()
+		if errors.Is(err, ytdlp.ErrBotCheck) {
+			detail = ytdlp.ErrBotCheck.Error()
+		}
+		c.Status, c.Detail = Fail, "search works, but downloads are refused: "+detail
+		c.Fix = youtubeFix(err)
+		return c
+	}
+	c.Status, c.Detail = OK, "search and audio download work"
 	return c
 }
 
@@ -421,8 +440,8 @@ func youtubeFix(err error) string {
 	switch {
 	case errors.Is(err, ytdlp.ErrToolMissing):
 		return "install yt-dlp: sudo pacman -S yt-dlp"
-	case strings.Contains(msg, "not a bot") || strings.Contains(msg, "sign in"):
-		return "YouTube is limiting this IP: wait a while, lower jobs, or set youtube.cookies_from_browser = \"firefox\""
+	case errors.Is(err, ytdlp.ErrBotCheck), strings.Contains(msg, "not a bot"), strings.Contains(msg, "sign in"):
+		return "YouTube is limiting this IP: " + ytdlp.BotCheckFix
 	case strings.Contains(msg, "403") || strings.Contains(msg, "unable to extract") || strings.Contains(msg, "no video formats"):
 		return "YouTube changed something yt-dlp doesn't handle yet: update it (sudo pacman -Syu yt-dlp)"
 	}

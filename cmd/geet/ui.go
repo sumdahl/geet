@@ -22,6 +22,7 @@ type ui interface {
 	phase(label string) phaseUI // a step before downloads start, e.g. reading a playlist
 	track(index, total int, name string) trackUI
 	log(format string, args ...any) // a line above any live progress
+	highlight(s string) string      // emphasis for warnings, where the display supports it
 	writer() io.Writer              // for slog, so logs don't tear the bars
 	close(abort bool)
 }
@@ -80,8 +81,9 @@ func (u *plainUI) log(format string, args ...any) {
 	fmt.Fprintf(u.w, format+"\n", args...)
 }
 
-func (u *plainUI) writer() io.Writer { return u.w }
-func (u *plainUI) close(bool)        {}
+func (u *plainUI) writer() io.Writer         { return u.w }
+func (u *plainUI) highlight(s string) string { return s }
+func (u *plainUI) close(bool)                {}
 
 type plainTrack struct {
 	u   *plainUI
@@ -269,6 +271,8 @@ func (u *barUI) log(format string, args ...any) {
 }
 
 func (u *barUI) writer() io.Writer { return u.p }
+
+func (u *barUI) highlight(s string) string { return u.paint("33", s) }
 
 func (u *barUI) close(abort bool) {
 	if abort {

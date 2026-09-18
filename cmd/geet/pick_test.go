@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sumdahl/geet/internal/config"
 	"github.com/sumdahl/geet/internal/itunes"
 	"github.com/sumdahl/geet/internal/spotify"
 )
@@ -159,5 +161,51 @@ func TestPseudoVersion(t *testing.T) {
 		if got := pseudoVersion.MatchString(v); got != want {
 			t.Errorf("pseudoVersion(%q) = %v, want %v", v, got, want)
 		}
+	}
+}
+
+func TestReadLinks(t *testing.T) {
+	in := `https://open.spotify.com/track/4uJSCrI7r0usNJ3aaHAuC6
+# a comment
+
+https://open.spotify.com/track/4ceTCJPLBQBOogseivMuhL   spotify:track:7LVHVU3tWfcxj5aiPFEW4Q
+`
+	got, err := readLinks(strings.NewReader(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"https://open.spotify.com/track/4uJSCrI7r0usNJ3aaHAuC6",
+		"https://open.spotify.com/track/4ceTCJPLBQBOogseivMuhL",
+		"spotify:track:7LVHVU3tWfcxj5aiPFEW4Q",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestResolveListRejectsNonSongs(t *testing.T) {
+	cfg := config.Default()
+	for _, links := range [][]string{
+		{"https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"},
+		{"https://open.spotify.com/track/4uJSCrI7r0usNJ3aaHAuC6", "hello"},
+	} {
+		if _, err := resolveList(context.Background(), cfg, links, func(string, int, int) {}); err == nil {
+			t.Errorf("%v: no error", links)
+		}
+	}
+	// A podcast episode copied along with songs is skipped, not an error.
+	if got, err := resolveList(context.Background(), cfg, []string{"spotify:episode:0Q86acNRm6V9GYx55SXKwf"}, func(string, int, int) {}); err != nil || len(got) != 0 {
+		t.Errorf("episode: %v, %v", got, err)
+	}
+}
+
+func TestBriefHandler(t *testing.T) {
+	var out strings.Builder
+	setupLogging(&out, false)
+	slog.Info("hidden")
+	slog.Warn("skipping a track Spotify no longer has", "id", "abc")
+	if got, want := out.String(), "warning: skipping a track Spotify no longer has (id=abc)\n"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }

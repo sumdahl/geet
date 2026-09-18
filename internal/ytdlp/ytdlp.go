@@ -13,7 +13,16 @@ import (
 	"strings"
 )
 
-var ErrToolMissing = errors.New("yt-dlp not found")
+var (
+	ErrToolMissing = errors.New("yt-dlp not found")
+	// ErrBotCheck is YouTube refusing this IP until it proves it's human
+	// ("Sign in to confirm you're not a bot"). Unlike a stray 403 it doesn't
+	// pass by retrying: retries only prolong it.
+	ErrBotCheck = errors.New("YouTube wants a sign-in to confirm you're not a bot")
+)
+
+// BotCheckFix is how to get past ErrBotCheck.
+const BotCheckFix = `set youtube.cookies_from_browser to a browser where you're signed in to YouTube (e.g. "chromium" or "firefox"), or wait an hour and lower jobs`
 
 type Runner struct {
 	Binary             string
@@ -73,11 +82,18 @@ func (r Runner) RunLines(ctx context.Context, onLine func(string), args ...strin
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		if isBotCheck(stderr.String()) {
+			return fmt.Errorf("%w: %s", ErrBotCheck, BotCheckFix)
+		}
 		// Lead with yt-dlp's own explanation: it is what a one-line display
 		// has room for, and "exit status 1" says nothing.
 		return fmt.Errorf("yt-dlp: %s (%w)", reason(stderr.String()), err)
 	}
 	return sc.Err()
+}
+
+func isBotCheck(stderr string) bool {
+	return strings.Contains(stderr, "confirm you") && strings.Contains(stderr, "not a bot")
 }
 
 func reason(stderr string) string {

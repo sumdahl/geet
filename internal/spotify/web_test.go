@@ -2,6 +2,7 @@ package spotify
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -116,7 +117,8 @@ func TestWebPlaylistProgress(t *testing.T) {
 	if _, err := w.Resolve(context.Background(), Ref{KindPlaylist, "pl"}); err != nil {
 		t.Fatal(err)
 	}
-	want := [][2]int{{0, 4}, {1, 4}, {2, 4}, {3, 4}, {4, 4}}
+	// The playlist has 4 items, but the podcast episode isn't read.
+	want := [][2]int{{0, 3}, {1, 3}, {2, 3}, {3, 3}}
 	if !reflect.DeepEqual(calls, want) {
 		t.Errorf("progress %v, want %v", calls, want)
 	}
@@ -157,5 +159,73 @@ func TestWebRetriesRateLimit(t *testing.T) {
 	}
 	if calls < 2 || len(tracks) != 2 {
 		t.Errorf("calls=%d tracks=%d", calls, len(tracks))
+	}
+}
+
+// A playlist whose public page lists the maximum 100 tracks is truncated;
+// its real size comes from the page summary ("201 items").
+func TestWebPlaylistTruncated(t *testing.T) {
+	items := make([]map[string]any, embedPlaylistCap)
+	for i := range items {
+		items[i] = map[string]any{"uri": "spotify:track:t1", "title": "One", "subtitle": "Alpha", "duration": 61000, "entityType": "track"}
+	}
+	embed, _ := json.Marshal(map[string]any{"props": map[string]any{"pageProps": map[string]any{"state": map[string]any{"data": map[string]any{
+		"entity": map[string]any{"name": "Big Mix", "trackList": items},
+	}}}}})
+	album, _ := os.ReadFile(filepath.Join("testdata", "embed_album.html"))
+	page, _ := os.ReadFile(filepath.Join("testdata", "page_t1.html"))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/embed/playlist/big":
+			w.Write([]byte(`<script id="__NEXT_DATA__" type="application/json">` + string(embed) + `</script>`))
+		case "/playlist/big":
+			w.Write([]byte(`<meta property="og:title" content="Big Mix"/><meta property="og:description" content="Playlist · Sumiran · 1,201 items"/>`))
+		case "/embed/album/alb":
+			w.Write(album)
+		case "/track/t1":
+			w.Write(page)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	w := NewWeb(srv.URL)
+	w.Workers = 8
+	col, err := w.Resolve(context.Background(), Ref{KindPlaylist, "big"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(col.Tracks) != embedPlaylistCap || col.Total != 1201 || col.Name != "Big Mix" {
+		t.Errorf("got %d tracks, Total %d, name %q; want 100, 1201, Big Mix", len(col.Tracks), col.Total, col.Name)
+	}
+	if name, err := w.Name(context.Background(), Ref{KindPlaylist, "big"}); err != nil || name != "Big Mix" {
+		t.Errorf("Name = %q, %v", name, err)
+	}
+}
+
+func TestWebPlaylistNotTruncated(t *testing.T) {
+	col, err := newTestWeb(t).Resolve(context.Background(), Ref{KindPlaylist, "pl"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if col.Total != 0 {
+		t.Errorf("Total = %d for a playlist read in full", col.Total)
+	}
+}
+
+func TestWebTracksKeepsOrderAndSkipsGone(t *testing.T) {
+	w := newTestWeb(t)
+	w.Workers = 4
+	got, err := w.Tracks(context.Background(), []string{"tx", "gone", "t2", "t1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, tr := range got {
+		ids = append(ids, tr.ID)
+	}
+	if want := []string{"tx", "t2", "t1"}; !reflect.DeepEqual(ids, want) {
+		t.Errorf("ids %v, want %v", ids, want)
 	}
 }

@@ -3,6 +3,7 @@ package doctor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,6 +78,7 @@ func TestYoutubeFix(t *testing.T) {
 	}{
 		{ytdlp.ErrToolMissing, "install yt-dlp"},
 		{errors.New("yt-dlp: [youtube] x: Sign in to confirm you're not a bot"), "cookies_from_browser"},
+		{fmt.Errorf("download failed: %w", ytdlp.ErrBotCheck), "cookies_from_browser"},
 		{errors.New("yt-dlp: HTTP Error 403: Forbidden"), "update it"},
 		{context.DeadlineExceeded, "timed out"},
 		{errors.New("dial tcp: no such host"), "internet connection"},

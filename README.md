@@ -93,6 +93,18 @@ geet download "<url>" -v                             # debug logs, including eve
 
 Exit codes: `0` all tracks succeeded, `1` some failed (the others were saved), `2` fatal (bad link, missing tool, interrupted).
 
+### Playlists over 100 songs
+
+Spotify's public page lists only a playlist's first 100 songs. geet notices and says so:
+
+```
+warning: Spotify's public page shows only 100 of the 201 songs in this playlist.
+To download all of them: in the Spotify app open the playlist, press Ctrl+A then Ctrl+C, then run:
+  wl-paste | geet download "https://open.spotify.com/playlist/…" --tracks -
+```
+
+Ctrl+A then Ctrl+C in the Spotify desktop app copies a link for every song, and `--tracks -` reads them from the clipboard. The playlist link only names the folder. Songs already downloaded are skipped, so re-running this after a normal download fetches just the missing ones. `--tracks` also takes a file with one link per line (`#` starts a comment), and it works without a playlist link, saving into `output` directly.
+
 ### Progress and speed
 
 In a terminal, each song gets an animated bar. Big runs (more than 8 songs) switch to a compact display: bars only for songs being downloaded or tagged, and one summary line for the rest:
@@ -110,7 +122,16 @@ jobs = 16          # parallel downloads
 resolve_jobs = 24  # parallel metadata reads and YouTube searches (keep it above jobs)
 ```
 
-Past your bandwidth, more jobs just split it. If YouTube starts answering "sign in to confirm you're not a bot", lower `jobs`. Interrupting with Ctrl+C is always safe: no partial files are left, and re-running the same command continues where it stopped.
+Past your bandwidth, more jobs just split it.
+
+**"YouTube wants a sign-in to confirm you're not a bot"** means YouTube is limiting your IP, usually after many downloads in a short time. Waiting an hour and lowering `jobs` helps. The lasting fix is to let yt-dlp use your browser's YouTube login:
+
+```toml
+[youtube]
+cookies_from_browser = "chromium"   # or firefox, brave, …: one where you're signed in to YouTube
+```
+
+`geet doctor` detects this, because it checks that audio downloads work, not just search. Interrupting with Ctrl+C is always safe: no partial files are left, and re-running the same command continues where it stopped.
 
 ### Search
 
