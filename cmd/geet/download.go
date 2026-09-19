@@ -483,6 +483,9 @@ func runDownload(ctx context.Context, cfg config.Config, rep *reporter, col spot
 		if errors.Is(err, ytdlp.ErrAgeRestricted) {
 			d.noticeAge(err)
 		}
+		if errors.Is(err, ytdlp.ErrSignInRequired) {
+			d.noticeSignIn()
+		}
 	})
 	if ctx.Err() != nil {
 		return res, errInterrupted
@@ -508,7 +511,8 @@ type downloader struct {
 	ytd  ytdlp.Runner
 	rep  *reporter
 
-	ageNoticed atomic.Bool // the age-restriction advice is shown once a run
+	ageNoticed    atomic.Bool // the age-restriction advice is shown once a run
+	signInNoticed atomic.Bool // and the sign-in advice
 }
 
 func newDownloader(cfg config.Config, root string, rep *reporter, idx *index.Index) *downloader {
@@ -612,7 +616,7 @@ func (d *downloader) download(ctx context.Context, j *trackJob) (*trackJob, bool
 	j.work = work
 	d.emit(j, "downloading")
 	j.src, err = d.fetch(ctx, j.url, j.work, j.tu, j.ev)
-	if errors.Is(err, ytdlp.ErrAgeRestricted) || errors.Is(err, ytdlp.ErrUnplayable) {
+	if errors.Is(err, ytdlp.ErrAgeRestricted) || errors.Is(err, ytdlp.ErrUnplayable) || errors.Is(err, ytdlp.ErrSignInRequired) {
 		j.src, err = d.tryOtherUploads(ctx, j, err)
 	}
 	if err == nil {
@@ -639,9 +643,12 @@ const maxAlternatives = 3
 // only that no format is available.
 func (d *downloader) tryOtherUploads(ctx context.Context, j *trackJob, cause error) (download.Source, error) {
 	why := "unavailable"
-	if errors.Is(cause, ytdlp.ErrAgeRestricted) {
+	switch {
+	case errors.Is(cause, ytdlp.ErrAgeRestricted):
 		why = "age-restricted"
 		d.noticeAge(cause)
+	case errors.Is(cause, ytdlp.ErrSignInRequired):
+		why = "sign-in only"
 	}
 	// failed is what to report if nothing works: the first cause, unless a
 	// fallback ran into YouTube's bot check, which blocks every upload and
@@ -727,6 +734,14 @@ func youtubeID(u string) string {
 func (d *downloader) noticeAge(err error) {
 	if d.ageNoticed.CompareAndSwap(false, true) {
 		d.rep.notice(ytdlp.AgeRestrictedAdvice(err))
+	}
+}
+
+// noticeSignIn shows how to get songs YouTube plays only when signed in,
+// once a run, and only for a song no other upload could stand in for.
+func (d *downloader) noticeSignIn() {
+	if d.signInNoticed.CompareAndSwap(false, true) {
+		d.rep.notice(ytdlp.SignInAdvice)
 	}
 }
 
@@ -856,7 +871,7 @@ func (d *downloader) fetch(ctx context.Context, url, work string, tu trackUI, ev
 				d.rep.emit(tu, e)
 			}
 		})
-		if err == nil || ctx.Err() != nil || errors.Is(err, ytdlp.ErrToolMissing) || errors.Is(err, ytdlp.ErrBotCheck) || errors.Is(err, ytdlp.ErrAgeRestricted) || errors.Is(err, ytdlp.ErrUnplayable) {
+		if err == nil || ctx.Err() != nil || errors.Is(err, ytdlp.ErrToolMissing) || errors.Is(err, ytdlp.ErrBotCheck) || errors.Is(err, ytdlp.ErrAgeRestricted) || errors.Is(err, ytdlp.ErrUnplayable) || errors.Is(err, ytdlp.ErrSignInRequired) {
 			return src, err
 		}
 		if attempt >= d.cfg.DownloadRetries {

@@ -28,7 +28,15 @@ var (
 	// no warning saying so), removed, or private. Retrying doesn't help;
 	// another upload of the song may.
 	ErrUnplayable = errors.New("YouTube serves no audio for this upload")
+	// ErrSignInRequired is an upload YouTube plays only to a signed-in
+	// account, without saying why ("Please sign in"). Unlike ErrBotCheck it
+	// is this upload only: others still play. Retrying doesn't help; another
+	// upload or a sign-in does.
+	ErrSignInRequired = errors.New("YouTube plays this upload only to a signed-in account")
 )
+
+// SignInAdvice is what to tell the user after ErrSignInRequired.
+const SignInAdvice = `YouTube plays some uploads only to a signed-in account, and for a song with no other upload geet can use, that's the only way to get it. Set youtube.cookies_from_browser = "auto" to use your default browser's YouTube sign-in, then run the same command again.`
 
 // ageRestrictedError is ErrAgeRestricted, noting whether a YouTube account
 // was signed in, which decides the fix.
@@ -150,6 +158,9 @@ func (r Runner) RunLines(ctx context.Context, onLine func(string), args ...strin
 		}
 		if unplayable(stderr.String()) {
 			return fmt.Errorf("%w (%s)", ErrUnplayable, reason(stderr.String()))
+		}
+		if strings.Contains(stderr.String(), "Please sign in") {
+			return ErrSignInRequired
 		}
 		// Lead with yt-dlp's own explanation: it is what a one-line display
 		// has room for, and "exit status 1" says nothing.

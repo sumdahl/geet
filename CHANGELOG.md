@@ -7,6 +7,13 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Fixed
+- A song whose YouTube upload asks for a sign-in ("Please sign in", with no
+  age restriction) no longer fails after retrying the same video: geet now
+  tries the song's other uploads, as it does for age-restricted ones.
+  "Jackson Laird - Microdose" now downloads without a sign-in. If no other
+  upload works, geet says once how to use your browser's YouTube sign-in.
+
 ## [0.4.4] - 2026-09-19
 
 ### Fixed
