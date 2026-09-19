@@ -35,6 +35,9 @@ type Options struct {
 	// MusicFallback searches YouTube Music's songs when neither query
 	// matches (see resolveMusic).
 	MusicFallback bool
+	// TitleFallback searches by the song's title alone when nothing else
+	// matched (see resolveTitleOnly).
+	TitleFallback bool
 }
 
 type Candidate struct {
@@ -75,7 +78,54 @@ func (r *Resolver) Resolve(ctx context.Context, t spotify.Track) (Scored, []Scor
 		best, more, err = r.resolveMusic(ctx, t)
 		all = append(all, more...)
 	}
+	if errors.Is(err, ErrNoMatch) && r.opts.TitleFallback {
+		var more []Scored
+		best, more, err = r.resolveTitleOnly(ctx, t)
+		all = append(all, more...)
+	}
 	return best, all, err
+}
+
+// minTitleOnlyWords is the fewest words a title needs to be searched alone:
+// one word ("Home", "Iris") names too many songs.
+const minTitleOnlyWords = 2
+
+// resolveTitleOnly is the last resort, for an artist that YouTube knows by
+// a name sharing nothing with Spotify's: it searches by the title alone and
+// accepts only what would pass as an exact re-upload (youtube.Alternatives):
+// the full title (not counting "feat."), no variant or other-edit words, and
+// a length within 2 s of Spotify's. It runs only when every other search
+// found nothing, so it can't change a match that works; the pick is marked
+// TitleOnly, and the download says how it was matched.
+func (r *Resolver) resolveTitleOnly(ctx context.Context, t spotify.Track) (Scored, []Scored, error) {
+	query := strings.TrimSpace(textnorm.StripFeat(t.Title))
+	if len(textnorm.Words(query)) < minTitleOnlyWords {
+		return Scored{}, nil, fmt.Errorf("%w for %q", ErrNoMatch, t.Title)
+	}
+	wide := *r
+	wide.opts.SearchResults = wideResults
+	cands, err := wide.Search(ctx, query)
+	if err != nil {
+		return Scored{}, nil, err
+	}
+	_, all, _ := Best(t, cands, r.opts.MaxDurationDiff)
+	var best Scored
+	found := false
+	for i, s := range all {
+		if s.Reject == rejectNoArtist && exactReupload(t, s.Candidate) {
+			s.Reject, s.TitleOnly = "", true
+			all[i] = s
+			if !found || s.Score > best.Score {
+				best, found = s, true
+			}
+		}
+		slog.DebugContext(ctx, "youtube candidate", "track", t.Title, "query", "title only: "+query, "id", all[i].ID, "title", all[i].Title,
+			"channel", all[i].Channel, "score", fmt.Sprintf("%.1f", all[i].Score), "reject", all[i].Reject)
+	}
+	if !found {
+		return Scored{}, all, fmt.Errorf("%w for %q", ErrNoMatch, t.Title)
+	}
+	return best, all, nil
 }
 
 // wideResults is how many results each search of MoreAlternatives reads.

@@ -364,6 +364,7 @@ youtube.cookies_from_browser = "auto"
 | `youtube.max_duration_diff` | `--youtube-max-duration-diff` | duration | `10s` | Reject uploads whose length differs more than this |
 | `youtube.cookies_file` | `--youtube-cookies-file` | string | | Netscape cookies file for yt-dlp |
 | `youtube.cookies_from_browser` | `--youtube-cookies-from-browser` | string | *(off)* | Send your YouTube sign-in to get past the bot check: `auto` (default browser) or a browser name; the keyring is added automatically |
+| `youtube.title_fallback` | `--youtube-title-fallback` | bool | `true` | Last resort: match by title and exact length alone |
 | `youtube.music_fallback` | `--youtube-music-fallback` | bool | `true` | When YouTube search finds no match, look on YouTube Music |
 | `youtube.extra_args` | `--youtube-extra-args` | list | | Extra yt-dlp arguments, space-separated |
 | `search.country` | `--search-country` | string | `US` | iTunes store `geet search` looks in |
@@ -471,6 +472,9 @@ The full schema and its compatibility rules are in [docs/03-communication-contra
   - If nothing matches, a second search asks for the "audio" upload, which catches official videos whose intro pushes them past the length limit.
   - If that finds nothing either, geet searches **YouTube Music's songs** (`youtube.music_fallback`, on by default). YouTube Music lists the official studio audio (the artist's "- Topic" channel) at the album's exact length, where regular search buries it under music videos with intros, lyric uploads and fan edits. Romanized titles (Nepali "Maayajastai" / "Maayaajastai"), classical pieces and small artists are the usual cases. Only the song results whose titles fit are opened, about 4 s for that song only, and they're scored by the same rules. So a performance by another pianist, or someone else's slowed edit, is still rejected rather than saved under the wrong name.
   - `$` in a name reads as `s` (A$AP → ASAP), words split differently still match ("1Train" / "1 Train"), and an artist name at the start of a channel name counts (`ASAPROCKYUPTOWN`).
+  - **An artist known by a shorter name:** Spotify's "Kush Band Nepal" is "KUSH" on YouTube. If no upload names the artist in full, the distinctive part of the name counts, without words like *band, the, official, music, Nepal*. It scores below a full name, so an upload that names the artist in full still wins.
+  - **By title alone, as the last resort** (`youtube.title_fallback`): when every search has failed, geet searches the song's title alone. It accepts only an upload with the full title, within 2 s of the length, and no variant, karaoke, cover or TV-show words. Titles of one word are excluded. Such a song carries a warning saying how it was matched.
+  - Every change to matching is checked against the real searches of a 201-song playlist (`internal/youtube/testdata/corpus`). The test fails if any existing score or pick changes.
   - Real searches that once picked wrong are kept as test fixtures.
 - **One ffmpeg pass per track.** Download only fetches the raw stream, because yt-dlp's own conversion silently ignores the requested bitrate when the codecs already match. Opus has no picture stream, so its cover goes in a `METADATA_BLOCK_PICTURE` tag. The tags travel in an `FFMETADATA` file because a base64 cover exceeds Linux's 128 KB per-argument limit.
 - **Atomic, resumable output.** Each track is built in a hidden work directory inside the library and renamed into place, so a file either exists complete or not at all. The index is saved after every track.

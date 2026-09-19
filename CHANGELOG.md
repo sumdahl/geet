@@ -7,6 +7,28 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Fixed
+- Songs whose artist YouTube knows by a shorter name now match: Spotify's
+  "Kush Band Nepal" is "KUSH" on YouTube, and "Harayeko Graha" failed with
+  "no YouTube result matched". When no upload names the artist in full, the
+  distinctive part of the name counts (without band, the, official, music,
+  Nepal, ...), scored below a full name, so an upload naming the artist in
+  full still wins.
+
+### Added
+- `youtube.title_fallback` (on by default): when every search has failed,
+  geet searches the title alone and accepts only an upload with the full
+  title, within 2 s of the length, and no variant, karaoke, cover or TV-show
+  words (one-word titles are excluded). The song then carries a warning.
+- A backward-compatibility test scores the real searches of a 201-song
+  playlist (1,000 candidates) and fails if any existing score or pick
+  changes.
+
+### Changed
+- Stand-ins for a song (an age-restricted upload's, or one matched by title
+  alone) now also exclude competition, session and karaoke uploads,
+  however the words are spelled ("karoke", "instrumentally").
+
 ## [0.4.2] - 2026-09-19
 
 ### Changed
