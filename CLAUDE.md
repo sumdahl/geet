@@ -72,7 +72,7 @@ Linux is the target and macOS is best effort, where everything but `watch` (Wayl
 - `internal/library`: output path = `output` (plus `FolderName(playlist)` for playlists) + `output_template` + extension. Each template segment is exactly one path component, sanitized.
 - Resolving a link returns a `spotify.Collection` (ref, name, tracks). The name is what the playlist folder is named after.
 - `internal/index`: the download index, which stops the same song being downloaded twice (hard link, copy or skip, per `duplicates`).
-  - It keeps every copy of a recording (ISRC maps to a list of keys).
+  - It keeps every copy of a recording (ISRC maps to a list of keys), and every saved copy of a song (`Entry.Also`), so deleting one copy re-links from another instead of downloading again.
   - `Lookup` prefers a copy on the destination's filesystem, because only that can be hard-linked.
   - It relies on the comment tag holding the Spotify track URL, which `internal/audio` writes. The first-run `Scan` finds old downloads that way, so never drop that tag.
 - `internal/itunes`, `internal/deezer` (`catalog.go`) and `cmd/geet/search.go`/`pick.go`: `geet search`. It queries the keyless Apple and Deezer catalogs in parallel (`searchCatalog`), ranks them together (`itunes.Rank`), picks with fzf or a numbered list, and runs the same pipeline.
@@ -99,6 +99,7 @@ Linux is the target and macOS is best effort, where everything but `watch` (Wayl
   - Runs of more than 8 tracks use compact mode: a bar only while downloading or tagging, and a bottom summary line (`BarPriority(MaxInt32)`) with per-state counts.
   - The summary never completes on its own, so `close()` aborts it before `p.Wait()`.
   - `"downloaded"` is a UI-only stage (not in the NDJSON), so a track waiting for a tag worker stops counting as downloading.
+  - Track bars are capped to the terminal's height minus `reservedRows` (`acquire`/`release`; extra tracks queue for a line). A bar's slot is freed only after `bar.Wait()` (its last draw, in `drop`): when a redraw has more rows than the terminal, mpb v8.16.1 undercounts the lines and leaves stale bars in the scrollback. `GEET_UI_DEMO=1` runs `TestUIDemo`; build it with `go test -c` (go test captures stderr), run it under `script` at several `stty rows`, and replay the output into pyte, since tmux's capture misreports this.
   - Never call into a `*mpb.Bar` while holding `barTrack.mu`: the render goroutine takes that lock in `status`.
   - To test the animation headlessly, the pty needs a size: `script -qefc "stty cols 150 rows 40; <cmd>" /dev/null`. With 0 rows mpb draws nothing.
 - `cmd/geet/watch.go`, `internal/clipboard`, `internal/notify`: `geet watch`.

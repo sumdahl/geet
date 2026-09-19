@@ -2,9 +2,11 @@ package index
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -198,5 +200,109 @@ func TestDeviceOfMissingPath(t *testing.T) {
 	b, ok2 := deviceOf(filepath.Join(dir, "not", "yet", "created"))
 	if !ok1 || !ok2 || a != b {
 		t.Errorf("deviceOf: %d,%v vs %d,%v", a, ok1, b, ok2)
+	}
+}
+
+// The same song in two playlists' folders: deleting one copy must leave
+// the other findable, so re-running that playlist links it again instead of
+// downloading. Deleting both makes it a download again.
+func TestIndexRemembersEveryCopy(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "A", "song.opus")
+	b := filepath.Join(dir, "B", "song.opus")
+	for _, p := range []string{a, b} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	idx, _, err := Open(filepath.Join(dir, "index.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx.Add("t1", "ISRC1", a)
+	idx.Add("t1", "ISRC1", b)
+	idx.Add("t1", "ISRC1", b) // recorded once
+	if err := idx.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reopened from disk, both copies are known.
+	idx, _, err = Open(filepath.Join(dir, "index.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := idx.tracks["t1.opus"]; got.Path != a || !reflect.DeepEqual(got.Also, []string{b}) {
+		t.Fatalf("entry %+v, want %s with also %s", got, a, b)
+	}
+
+	if err := os.Remove(a); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := idx.Lookup("t1", "", ".opus", filepath.Dir(a)); !ok || got != b {
+		t.Errorf("first copy deleted: Lookup = %q, %v; want the other copy %s", got, ok, b)
+	}
+	// By ISRC too (the same recording under another track ID).
+	if got, ok := idx.Lookup("other-id", "ISRC1", ".opus", filepath.Dir(a)); !ok || got != b {
+		t.Errorf("by ISRC: Lookup = %q, %v; want %s", got, ok, b)
+	}
+	if total, missing := idx.Stats(); total != 1 || missing != 0 {
+		t.Errorf("Stats = %d, %d; want 1 song, 0 missing", total, missing)
+	}
+
+	if err := os.Remove(b); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := idx.Lookup("t1", "ISRC1", ".opus", dir); ok {
+		t.Errorf("every copy deleted: Lookup = %q, want nothing", got)
+	}
+	if idx.Len() != 0 {
+		t.Errorf("forgotten song still counted: Len = %d", idx.Len())
+	}
+}
+
+// An index written before copies were recorded loads as before, and one
+// written now still reads as the old format (older geet ignores "also").
+func TestIndexFormatCompatibility(t *testing.T) {
+	dir := t.TempDir()
+	song := filepath.Join(dir, "song.opus")
+	if err := os.WriteFile(song, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := `{"tracks": {"t1.opus": {"path": "` + song + `", "isrc": "ISRC1"}}}`
+	p := filepath.Join(dir, "index.json")
+	if err := os.WriteFile(p, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	idx, fresh, err := Open(p)
+	if err != nil || fresh {
+		t.Fatalf("Open old format: fresh %v, err %v", fresh, err)
+	}
+	if got, ok := idx.Lookup("t1", "", ".opus", dir); !ok || got != song {
+		t.Errorf("old format: Lookup = %q, %v", got, ok)
+	}
+
+	other := filepath.Join(dir, "copy.opus")
+	if err := os.WriteFile(other, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	idx.Add("t1", "ISRC1", other)
+	if err := idx.Save(); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var asOld struct {
+		Tracks map[string]struct {
+			Path string `json:"path"`
+			ISRC string `json:"isrc"`
+		} `json:"tracks"`
+	}
+	if err := json.Unmarshal(b, &asOld); err != nil || asOld.Tracks["t1.opus"].Path != song {
+		t.Errorf("new file as the old format: %+v, %v", asOld, err)
 	}
 }
