@@ -36,6 +36,9 @@ type Scored struct {
 	Candidate
 	Score  float64
 	Reject string // non-empty if the candidate was ruled out
+	// TitleOnly marks a pick matched by title and length alone, the upload
+	// not naming the artist (see Resolver.resolveTitleOnly).
+	TitleOnly bool
 }
 
 func score(t spotify.Track, c Candidate, rank, n int, maxDiff time.Duration) Scored {
@@ -65,12 +68,14 @@ func score(t spotify.Track, c Candidate, rank, n int, maxDiff time.Duration) Sco
 
 	channel := textnorm.Tokens(c.Channel)
 	switch artistMatch(t.Artists, append(slices.Clone(ytTitle), channel...), c.Channel) {
-	case 0:
+	case artistNone:
 		return reject(rejectNoArtist)
-	case 1:
+	case artistPrimary:
 		s.Score += weightArtist
-	default:
+	case artistFeatured:
 		s.Score += weightArtist / 2
+	case artistCore:
+		s.Score += weightArtist / 4
 	}
 
 	official, topic := officialChannel(t.Artists, c.Channel, c.Verified)
@@ -209,6 +214,49 @@ func withJoins(words []string) []string {
 	return out
 }
 
+// How an upload names the song's artists, strongest first.
+const (
+	artistNone     = iota
+	artistPrimary  // the primary artist, in full
+	artistFeatured // only a featured artist, in full
+	// artistCore: only the distinctive part of an artist's name ("Kush" of
+	// "Kush Band Nepal"). Tried only when no name is found in full, and
+	// scored below a full name, so an upload that names the artist in full
+	// always wins, and what matched before still matches the same way.
+	artistCore
+)
+
+// genericNameWords are words artists add to a name to tell it apart on a
+// streaming service, while uploads often use the bare name: "Kush Band
+// Nepal" is "KUSH" on YouTube. Only whole words, and only when the name has
+// something else left.
+var genericNameWords = map[string]bool{
+	"band": true, "the": true, "official": true, "music": true, "group": true,
+	"nepal": true, "nepali": true, "np": true, "india": true, "indian": true,
+}
+
+// minCoreName is the shortest distinctive part matched on its own: shorter
+// ones ("dj", "mc") are too common to identify an artist.
+const minCoreName = 3
+
+// coreName is the distinctive words of an artist's name, or nil when there
+// are no generic words to leave out, or nothing distinctive is left.
+func coreName(artist string) []string {
+	var core []string
+	generic := false
+	for _, w := range textnorm.Tokens(artist) {
+		if genericNameWords[w] {
+			generic = true
+			continue
+		}
+		core = append(core, w)
+	}
+	if !generic || len(strings.Join(core, "")) < minCoreName {
+		return nil
+	}
+	return core
+}
+
 // minHandleName is the shortest artist name found run together at the start
 // of a channel name; shorter ones ("Ye", "SZA") would match unrelated
 // channels.
@@ -228,12 +276,17 @@ func artistMatch(artists []string, tokens []string, channel string) int {
 		}
 		if named {
 			if i == 0 {
-				return 1
+				return artistPrimary
 			}
-			return 2
+			return artistFeatured
 		}
 	}
-	return 0
+	for _, a := range artists {
+		if core := coreName(a); core != nil && tokenCoverage(core, tokens) == 1 {
+			return artistCore
+		}
+	}
+	return artistNone
 }
 
 // officialChannel recognizes the artist's own channel ("The Weeknd"), its
@@ -300,7 +353,55 @@ func Alternatives(t spotify.Track, all []Scored, best Scored) []Scored {
 // words, and all of the title but a "(feat. …)" part, since what tells an
 // explicit song from its clean edit is often only inside its brackets.
 func sameRecording(t spotify.Track, c Candidate) bool {
-	return len(textnorm.Variants(c.Title, t.Title)) == 0 && len(otherEdit(t, c.Title)) == 0 && fullTitle(t, c.Title)
+	return len(textnorm.Variants(c.Title, t.Title)) == 0 && len(otherEdit(t, c.Title)) == 0 && fullTitle(t, c.Title) &&
+		!hasWord(c.Title, t.Title, performanceWords) && !hasStem(c.Title, t.Title, versionStems)
+}
+
+// versionStems catch another version's words however they're spelled or
+// inflected ("karoke", "instrumentally", "covered by"), which the
+// whole-word variant list misses.
+var versionStems = []string{"instrumental", "karaok", "karok", "cover", "playthrough"}
+
+// hasStem reports whether a word of title, but none of reference, starts
+// with one of stems.
+func hasStem(title, reference string, stems []string) bool {
+	has := func(s, stem string) bool {
+		for _, w := range textnorm.Tokens(s) {
+			if strings.HasPrefix(w, stem) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, stem := range stems {
+		if has(title, stem) && !has(reference, stem) {
+			return true
+		}
+	}
+	return false
+}
+
+// performanceWords mark someone else performing the song on a show or at
+// an event ("ryhaan giri | harayeko graha | the voice of Nepal season 4",
+// 1 s from the original's length). Matching tolerates them at a score, but
+// a stand-in for the recording (an age-restricted upload's, or one matched
+// by title alone) must not be one.
+var performanceWords = []string{
+	"the voice", "season", "episode", "audition", "idol", "x factor", "got talent",
+	"contest", "competition", "session", "sessions", "tribute", "karaoke",
+}
+
+// hasWord reports whether title has one of words (whole words, after
+// textnorm.Norm) that reference, the song's own title, doesn't.
+func hasWord(title, reference string, words []string) bool {
+	have := " " + textnorm.Norm(title) + " "
+	own := " " + textnorm.Norm(reference) + " "
+	for _, w := range words {
+		if strings.Contains(have, " "+w+" ") && !strings.Contains(own, " "+w+" ") {
+			return true
+		}
+	}
+	return false
 }
 
 // fullTitle reports whether title has every word of t's title, not counting

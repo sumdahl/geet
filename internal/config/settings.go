@@ -44,6 +44,7 @@ func (c *Config) Settings() []Setting {
 		{Key: "youtube.cookies_file", Usage: "Netscape cookies file passed to yt-dlp", ptr: &c.YouTube.CookiesFile},
 		{Key: "youtube.cookies_from_browser", Usage: "send your YouTube sign-in from a browser, to get past \"confirm you're not a bot\": auto (the default browser), or brave, chromium, chrome, firefox, …; the keyring is added automatically. Off by default: YouTube then sees downloads as your account's", ptr: &c.YouTube.CookiesFromBrowser},
 		{Key: "youtube.music_fallback", Usage: "when YouTube search finds no match, look for the song on YouTube Music, which lists official studio audio at the album's exact length (about 4s more for that song only)", ptr: &c.YouTube.MusicFallback},
+		{Key: "youtube.title_fallback", Usage: "last resort when nothing else matches: search by the song's title alone and accept only an upload with the full title within 2s of its length (for artists YouTube knows by another name); the song then carries a warning", ptr: &c.YouTube.TitleFallback},
 		{Key: "youtube.extra_args", Usage: "extra yt-dlp arguments, space-separated", ptr: &c.YouTube.ExtraArgs},
 		{Key: "search.country", Usage: "iTunes store that geet search looks in (two letters, e.g. US, GB, IN)", ptr: &c.Search.Country},
 		{Key: "search.limit", Usage: "search results offered to pick from", ptr: &c.Search.Limit},

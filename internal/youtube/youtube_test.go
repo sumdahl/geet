@@ -607,3 +607,97 @@ func TestMoreAlternatives(t *testing.T) {
 		}
 	}
 }
+
+func TestCoreName(t *testing.T) {
+	tests := []struct {
+		artist string
+		want   []string
+	}{
+		{"Kush Band Nepal", []string{"kush"}},
+		{"The Goo Goo Dolls", []string{"goo", "goo", "dolls"}},
+		{"Band of Horses", []string{"of", "horses"}},
+		{"Enrique Iglesias", nil}, // nothing generic to leave out: the full name is the only match
+		{"The Band", nil},         // nothing distinctive left
+		{"DJ Nepal", nil},         // too short to identify an artist
+	}
+	for _, tt := range tests {
+		if got := coreName(tt.artist); !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("coreName(%q) = %q, want %q", tt.artist, got, tt.want)
+		}
+	}
+}
+
+// "Kush Band Nepal" is "KUSH" on YouTube. The distinctive part matches only
+// when the full name doesn't, and ranks below it, so an upload naming the
+// artist in full always wins.
+func TestArtistCoreMatch(t *testing.T) {
+	track := spotify.Track{Title: "Harayeko Graha", Artists: []string{"Kush Band Nepal"}, Duration: 214 * time.Second}
+	bare := Candidate{ID: "bare", Title: "KUSH - Harayeko Graha (Official Video)", Channel: "Shaurav Bhattarai", Duration: 214 * time.Second}
+	full := Candidate{ID: "full", Title: "Kush Band Nepal - Harayeko Graha", Channel: "Somebody", Duration: 214 * time.Second}
+	if got := artistMatch(track.Artists, textnorm.Tokens(bare.Title+" "+bare.Channel), bare.Channel); got != artistCore {
+		t.Fatalf("bare name: artistMatch = %d, want artistCore", got)
+	}
+	b, f := score(track, bare, 0, 2, maxDiff), score(track, full, 1, 2, maxDiff)
+	if b.Reject != "" || f.Reject != "" {
+		t.Fatalf("rejected: bare %q, full %q", b.Reject, f.Reject)
+	}
+	if b.Score >= f.Score {
+		t.Errorf("bare name %.1f ranks with or above full name %.1f", b.Score, f.Score)
+	}
+	// An upload naming neither is still rejected.
+	other := Candidate{ID: "x", Title: "Harayeko Graha", Channel: "Random Uploader", Duration: 214 * time.Second}
+	if s := score(track, other, 0, 1, maxDiff); s.Reject != rejectNoArtist {
+		t.Errorf("upload naming no artist: reject %q, want %q", s.Reject, rejectNoArtist)
+	}
+}
+
+// The last resort, by title alone, on the real search for "Harayeko Graha"
+// (as if YouTube knew the band by some other name): only an exact
+// re-upload is accepted, and a TV-show cover 1 s off, karaoke and a guitar
+// playthrough are not.
+func TestTitleOnlyFallback(t *testing.T) {
+	track := spotify.Track{Title: "Harayeko Graha", Artists: []string{"A Name YouTube Doesnt Use"}, Duration: 214 * time.Second}
+	bin, argsFile := fakeYtDlp(t, "kaalpanik.ndjson", "kaalpanik_audio.ndjson", "harayeko_title.ndjson")
+	r := newResolver(bin, false)
+	r.opts.TitleFallback = true
+	best, all, err := r.Resolve(context.Background(), track)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if best.ID != "lvoVXF7mtjo" || !best.TitleOnly {
+		t.Errorf("picked %s (title only %v), want the official lvoVXF7mtjo marked TitleOnly", best.ID, best.TitleOnly)
+	}
+	for _, s := range all {
+		if s.Reject == "" && (s.ID == "BXB8qxWzY9A" || s.ID == "AfpccFzZh9Q" || s.ID == "HC1xBOP-FcM") {
+			t.Errorf("accepted %s %q", s.ID, s.Title)
+		}
+	}
+	raw, _ := os.ReadFile(argsFile)
+	if !strings.Contains(string(raw), "ytsearch10:Harayeko Graha") {
+		t.Errorf("didn't search the title alone:\n%s", raw)
+	}
+}
+
+func TestTitleOnlyFallbackLimits(t *testing.T) {
+	// A one-word title names too many songs to be searched alone.
+	one := spotify.Track{Title: "Graha", Artists: []string{"Nobody Known"}, Duration: 214 * time.Second}
+	bin, argsFile := fakeYtDlp(t, "kaalpanik.ndjson", "kaalpanik_audio.ndjson", "harayeko_title.ndjson")
+	r := newResolver(bin, false)
+	r.opts.TitleFallback = true
+	if _, _, err := r.Resolve(context.Background(), one); !errors.Is(err, ErrNoMatch) {
+		t.Errorf("one-word title: err %v, want ErrNoMatch", err)
+	}
+	if raw, _ := os.ReadFile(argsFile); strings.Count(string(raw), "--\n") != 2 {
+		t.Errorf("searched a one-word title alone:\n%s", raw)
+	}
+
+	// Turned off, it never searches.
+	track := spotify.Track{Title: "Harayeko Graha", Artists: []string{"Nobody Known"}, Duration: 214 * time.Second}
+	bin, argsFile = fakeYtDlp(t, "kaalpanik.ndjson", "kaalpanik_audio.ndjson", "harayeko_title.ndjson")
+	if _, _, err := newResolver(bin, false).Resolve(context.Background(), track); !errors.Is(err, ErrNoMatch) {
+		t.Errorf("off: err %v, want ErrNoMatch", err)
+	}
+	if raw, _ := os.ReadFile(argsFile); strings.Contains(string(raw), "ytsearch10:") {
+		t.Errorf("searched by title with the fallback off:\n%s", raw)
+	}
+}

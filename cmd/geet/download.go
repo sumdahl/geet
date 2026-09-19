@@ -531,6 +531,7 @@ func newDownloader(cfg config.Config, root string, rep *reporter, idx *index.Ind
 			SearchResults:   cfg.YouTube.SearchResults,
 			MaxDurationDiff: cfg.YouTube.MaxDurationDiff.Duration,
 			MusicFallback:   cfg.YouTube.MusicFallback,
+			TitleFallback:   cfg.YouTube.TitleFallback,
 		}),
 	}
 }
@@ -549,6 +550,7 @@ type trackJob struct {
 	// cleanEdit is the clean edit's title when the explicit version couldn't
 	// be had and the clean one was saved instead.
 	cleanEdit string
+	titleOnly bool // matched by title and length alone (youtube.Scored.TitleOnly)
 }
 
 func (d *downloader) emit(j *trackJob, stage string) {
@@ -595,6 +597,7 @@ func (d *downloader) resolve(ctx context.Context, j *trackJob) (*trackJob, bool,
 		return j, false, err
 	}
 	j.alts = youtube.Alternatives(j.t, all, best)
+	j.titleOnly = best.TitleOnly
 	j.url = best.URL
 	j.ev.YouTubeURL = best.URL
 	d.emit(j, "resolved")
@@ -755,6 +758,10 @@ func (d *downloader) tag(ctx context.Context, j *trackJob) (*trackJob, bool, err
 	j.ev.Warning = audio.QualityWarning(d.cfg.Format, d.cfg.Bitrate, j.src.Kbps, j.src.Codec)
 	if j.cleanEdit != "" {
 		warn := fmt.Sprintf("YouTube wouldn't serve the explicit version, so this is the clean edit (%q)", j.cleanEdit)
+		j.ev.Warning = strings.TrimPrefix(j.ev.Warning+"; "+warn, "; ")
+	}
+	if j.titleOnly {
+		warn := fmt.Sprintf("matched by title and length only: the YouTube upload (%s) doesn't name the artist", j.url)
 		j.ev.Warning = strings.TrimPrefix(j.ev.Warning+"; "+warn, "; ")
 	}
 	d.emit(j, "done")

@@ -70,6 +70,7 @@ type YouTube struct {
 	CookiesFromBrowser string   `toml:"cookies_from_browser" json:"cookies_from_browser"`
 	ExtraArgs          []string `toml:"extra_args" json:"extra_args"`
 	MusicFallback      bool     `toml:"music_fallback" json:"music_fallback"`
+	TitleFallback      bool     `toml:"title_fallback" json:"title_fallback"`
 }
 
 // Search configures `geet search`, which looks songs up in the iTunes
@@ -129,6 +130,7 @@ func Default() Config {
 			MaxDurationDiff: Duration{10 * time.Second},
 			ExtraArgs:       []string{},
 			MusicFallback:   true,
+			TitleFallback:   true,
 		},
 		Spotify: Spotify{CacheDays: 30},
 		Search:  Search{Country: "US", Limit: 15, Picker: "auto", Confirm: true},
