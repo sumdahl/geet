@@ -106,6 +106,22 @@ WARNING: [youtube] Incomplete data received in embedded initial data; re-fetchin
 WARNING: [youtube] -yFj3FvoOWY: web_creator client https formats require a GVS PO Token which was not provided. They will be skipped as they may yield HTTP Error 403. You can manually pass a GVS PO Token for this client with --extractor-args "youtube:po_token=web_creator.gvs+XXX". For more information, refer to  https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide
 ERROR: [youtube] -yFj3FvoOWY: Requested format is not available. Use --list-formats for a list of available formats`
 
+// realSignInDownload is yt-dlp's stderr from a real download of an upload
+// YouTube plays only when signed in, though it isn't age-restricted and
+// other videos play ("Jackson Laird - Microdose").
+const realSignInDownload = `WARNING: [youtube] No title found in player responses; falling back to title from initial data. Other metadata may also be missing
+ERROR: [youtube] UKdnMvTsiUU: Please sign in. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies`
+
+func TestRunSignInRequired(t *testing.T) {
+	_, err := fake(t, realSignInDownload).Run(context.Background())
+	if !errors.Is(err, ErrSignInRequired) {
+		t.Fatalf("err = %v, want ErrSignInRequired", err)
+	}
+	if errors.Is(err, ErrBotCheck) || errors.Is(err, ErrAgeRestricted) || errors.Is(err, ErrUnplayable) {
+		t.Errorf("also reported as another kind: %v", err)
+	}
+}
+
 func TestRunUnplayable(t *testing.T) {
 	tests := []struct {
 		name, stderr string
