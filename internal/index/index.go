@@ -25,9 +25,20 @@ import (
 	"github.com/sumdahl/geet/internal/itunes"
 )
 
+// Entry is one track in one format. Path is its first copy; Also lists
+// its other copies, such as the same song hard-linked into another playlist's
+// folder. Without them, deleting the first copy lost track of the others and
+// the song was downloaded again. Older index files have no "also" and load
+// as before; older geet versions ignore it.
 type Entry struct {
-	Path string `json:"path"`
-	ISRC string `json:"isrc,omitempty"`
+	Path string   `json:"path"`
+	ISRC string   `json:"isrc,omitempty"`
+	Also []string `json:"also,omitempty"`
+}
+
+// paths is every copy, the first copy first.
+func (e Entry) paths() []string {
+	return append([]string{e.Path}, e.Also...)
 }
 
 // Index is safe for concurrent use.
@@ -99,23 +110,49 @@ func (x *Index) Lookup(id, isrc, ext, near string) (string, bool) {
 	var fallback string
 	seen := map[string]bool{}
 	for _, k := range candidates {
-		e, ok := x.tracks[k]
-		if !ok || seen[e.Path] {
+		if !x.prune(k) {
 			continue
 		}
-		seen[e.Path] = true
-		if _, err := os.Stat(e.Path); err != nil {
-			x.remove(k)
-			continue
-		}
-		if dev, ok := deviceOf(e.Path); nearOK && ok && dev == nearDev {
-			return e.Path, true
-		}
-		if fallback == "" {
-			fallback = e.Path
+		for _, p := range x.tracks[k].paths() {
+			if seen[p] {
+				continue
+			}
+			seen[p] = true
+			if dev, ok := deviceOf(p); nearOK && ok && dev == nearDev {
+				return p, true
+			}
+			if fallback == "" {
+				fallback = p
+			}
 		}
 	}
 	return fallback, fallback != ""
+}
+
+// prune drops the copies of k whose file is gone, promoting a remaining copy
+// to first if the first one went, and forgets k when none is left. It
+// reports whether any copy remains. The caller holds x.mu.
+func (x *Index) prune(k string) bool {
+	e, ok := x.tracks[k]
+	if !ok {
+		return false
+	}
+	var alive []string
+	for _, p := range e.paths() {
+		if _, err := os.Stat(p); err == nil {
+			alive = append(alive, p)
+		}
+	}
+	if len(alive) == 0 {
+		x.remove(k)
+		return false
+	}
+	e.Path, e.Also = alive[0], alive[1:]
+	if len(e.Also) == 0 {
+		e.Also = nil
+	}
+	x.tracks[k] = e
+	return true
 }
 
 // deviceOf is the filesystem holding path, or its nearest existing parent
@@ -135,8 +172,9 @@ func deviceOf(path string) (uint64, bool) {
 	}
 }
 
-// Add records a saved file. It doesn't replace an entry whose file still
-// exists: the first copy stays the one later duplicates are made from.
+// Add records a saved file. A song already known keeps its first copy, and
+// the new file is recorded as another copy, so the song can still be linked
+// from it after the first copy is deleted.
 func (x *Index) Add(id, isrc, path string) {
 	if id == "" {
 		return
@@ -144,12 +182,18 @@ func (x *Index) Add(id, isrc, path string) {
 	k := key(id, filepath.Ext(path))
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	if e, ok := x.tracks[k]; ok && e.Path != path {
-		if _, err := os.Stat(e.Path); err == nil {
-			return
-		}
+	if _, ok := x.tracks[k]; !ok || !x.prune(k) {
+		x.put(k, Entry{Path: path, ISRC: isrc})
+		return
 	}
-	x.put(k, Entry{Path: path, ISRC: isrc})
+	e := x.tracks[k]
+	if !slices.Contains(e.paths(), path) {
+		e.Also = append(e.Also, path)
+	}
+	if e.ISRC == "" {
+		e.ISRC = isrc
+	}
+	x.put(k, e)
 }
 
 func (x *Index) put(k string, e Entry) {
@@ -173,13 +217,20 @@ func (x *Index) remove(k string) {
 	delete(x.tracks, k)
 }
 
-// Stats counts the known songs and how many of them point to files that no
-// longer exist, without changing anything.
+// Stats counts the known songs and how many of them have no copy left on
+// disk, without changing anything.
 func (x *Index) Stats() (total, missing int) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	for _, e := range x.tracks {
-		if _, err := os.Stat(e.Path); err != nil {
+		gone := true
+		for _, p := range e.paths() {
+			if _, err := os.Stat(p); err == nil {
+				gone = false
+				break
+			}
+		}
+		if gone {
 			missing++
 		}
 	}

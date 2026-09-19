@@ -7,6 +7,17 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Fixed
+- A song saved in two folders is no longer downloaded again after one copy
+  is deleted: the download index now remembers every copy, and links from
+  whichever one still exists. Only when every copy is gone does geet
+  download it again. Index files from older versions still load.
+- The progress display no longer leaves stale "downloading", "waiting to
+  tag" or "tagging" lines behind in a playlist run with many jobs. Bars are
+  now capped to what fits the terminal (other tracks wait for a free line,
+  and the summary line still counts them), and a freed line is reused only
+  after the finished bar has been drawn for the last time.
+
 ## [0.4.3] - 2026-09-19
 
 ### Fixed

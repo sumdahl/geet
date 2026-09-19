@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -126,15 +127,87 @@ func (plainTrack) progress(int64, int64) {}
 // YouTube, or queued for a download slot) are counted on one summary line at
 // the bottom. With 16 downloads and 24 lookups at once, a bar per track
 // would be taller than most terminals.
+//
+// The live area never grows taller than the terminal: mpb redraws it by
+// moving the cursor up over it, and above the top of the screen it can't,
+// so every refresh would leave the top rows behind in the scrollback. So at
+// most maxBars tracks have a bar; the rest are counted on the summary line
+// and get a bar as one frees up.
 type barUI struct {
 	p       *mpb.Progress
 	color   bool
 	started time.Time
+	rows    func() int // the terminal's height now, 0 if unknown
 
 	mu      sync.Mutex
 	total   int
 	counts  map[string]int // tracks per state: finding, queued, downloading, tagging, done, failed
 	summary *mpb.Bar       // compact mode only
+	shown   int            // track bars on screen
+	pending []*barTrack    // tracks waiting for a bar, oldest first
+	closed  bool           // no new bars: the display is shutting down
+}
+
+// reservedRows are kept free of track bars: the summary line, a reading
+// phase's line, the line mpb's cursor rests on, and one to spare.
+const reservedRows = 4
+
+// maxBars is how many track bars fit the terminal now. The caller holds u.mu.
+func (u *barUI) maxBars() int {
+	rows := 0
+	if u.rows != nil {
+		rows = u.rows()
+	}
+	if rows <= 0 {
+		return math.MaxInt
+	}
+	return max(rows-reservedRows, 1)
+}
+
+// acquire reserves a bar for t, or queues t for the next one to free up.
+func (u *barUI) acquire(t *barTrack) bool {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.shown < u.maxBars() {
+		u.shown++
+		return true
+	}
+	if !slices.Contains(u.pending, t) {
+		u.pending = append(u.pending, t)
+	}
+	return false
+}
+
+// drop takes a track's bar down and frees its slot once mpb has drawn the
+// bar for the last time. Freeing it at once would let a queued bar appear
+// in that same redraw: past the terminal's height, mpb (v8.16.1) then
+// undercounts the lines it drew and leaves them behind as stale lines.
+func (u *barUI) drop(bar *mpb.Bar) {
+	bar.Abort(true)
+	go func() {
+		bar.Wait()
+		u.release()
+	}()
+}
+
+// release frees a bar and gives it to the oldest queued track still at work.
+func (u *barUI) release() {
+	u.mu.Lock()
+	u.shown--
+	var next *barTrack
+	for len(u.pending) > 0 && u.shown < u.maxBars() && !u.closed {
+		c := u.pending[0]
+		u.pending = u.pending[1:]
+		if c.active() {
+			next = c
+			u.shown++
+			break
+		}
+	}
+	u.mu.Unlock()
+	if next != nil {
+		next.makeBar()
+	}
 }
 
 const (
@@ -148,7 +221,18 @@ const (
 var spinner = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 func newBarUI(w io.Writer) *barUI {
+	var rows func() int
+	if f, ok := w.(*os.File); ok {
+		rows = func() int {
+			_, h, err := term.GetSize(int(f.Fd()))
+			if err != nil {
+				return 0
+			}
+			return h
+		}
+	}
 	return &barUI{
+		rows: rows,
 		p: mpb.New(
 			mpb.WithOutput(w),
 			mpb.WithWidth(24),
@@ -193,7 +277,7 @@ func (u *barUI) track(index, total int, name string) trackUI {
 		u.mu.Unlock()
 	}
 	if !compact {
-		t.showBar()
+		t.ensureBar()
 	}
 	return t
 }
@@ -275,6 +359,9 @@ func (u *barUI) writer() io.Writer { return u.p }
 func (u *barUI) highlight(s string) string { return u.paint("33", s) }
 
 func (u *barUI) close(abort bool) {
+	u.mu.Lock()
+	u.closed = true
+	u.mu.Unlock()
 	if abort {
 		u.p.Shutdown()
 		return
@@ -300,27 +387,57 @@ type barTrack struct {
 	done, total int64
 }
 
-// showBar gives the track its animated line, once.
-func (t *barTrack) showBar() *mpb.Bar {
+// ensureBar gives the track its animated line, once, if one is free; if
+// not, it returns nil and the track gets one later (barUI.release).
+func (t *barTrack) ensureBar() *mpb.Bar {
 	t.mu.Lock()
 	bar := t.bar
 	t.mu.Unlock()
 	if bar != nil {
 		return bar
 	}
+	if !t.ui.acquire(t) {
+		return nil
+	}
+	return t.makeBar()
+}
+
+// active reports whether the track is still at work on a download, so a
+// freed bar is worth giving it.
+func (t *barTrack) active() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.state == "downloading" || t.state == "waiting" || t.state == "tagging"
+}
+
+// makeBar creates the track's bar on a slot already reserved, showing where
+// the track is now: a track queued for a bar may be well into its download.
+func (t *barTrack) makeBar() *mpb.Bar {
 	u := t.ui
 	style := mpb.BarStyle().Lbound("").Rbound("").Filler("━").Tip("━").Padding("─").
 		FillerMeta(func(s string) string { return u.paint("32", s) }).
 		TipMeta(func(s string) string { return u.paint("32", s) }).
 		PaddingMeta(func(s string) string { return u.paint("2", s) })
-	bar = u.p.New(barTotal, style,
+	bar := u.p.New(barTotal, style,
 		mpb.PrependDecorators(decor.Name(t.label, decor.WCSyncSpaceR)),
 		mpb.AppendDecorators(decor.Any(t.status, decor.WC{C: decor.DindentRight})),
 		mpb.BarRemoveOnComplete(),
 	)
 	t.mu.Lock()
 	t.bar = bar
+	state, done, total := t.state, t.done, t.total
 	t.mu.Unlock()
+	switch state {
+	case "downloading":
+		if total > 0 {
+			bar.SetCurrent(min(done, total) * barDownEnd / total)
+		}
+	case "waiting", "tagging":
+		bar.SetCurrent(barDownEnd)
+	case "done", "failed":
+		// Finished while its bar was being made: take it straight down.
+		u.drop(bar)
+	}
 	return bar
 }
 
@@ -371,9 +488,11 @@ func (t *barTrack) stage(e event) {
 
 	switch next {
 	case "downloading":
-		t.showBar()
+		t.ensureBar()
 	case "tagging":
-		t.showBar().SetCurrent(barDownEnd)
+		if b := t.ensureBar(); b != nil {
+			b.SetCurrent(barDownEnd)
+		}
 	case "done":
 		from := filepath.Base(filepath.Dir(e.DuplicateOf))
 		switch {
@@ -388,13 +507,17 @@ func (t *barTrack) stage(e event) {
 		default:
 			t.ui.log("%s %s", t.label, t.ui.paint("32", "✓ saved"))
 		}
+		// Dropped, not completed: a completed bar is drawn once more on its
+		// way out, a line mpb then doesn't move the cursor back over, which
+		// left stale progress lines in the scrollback. The result line
+		// above already says how it ended.
 		if bar != nil {
-			bar.SetTotal(barTotal, true)
+			t.ui.drop(bar)
 		}
 	case "failed":
 		t.ui.log("%s %s", t.label, t.ui.paint("31", "✗ "+runewidth.Truncate(e.Error, errWidth, "…")))
 		if bar != nil {
-			bar.Abort(true)
+			t.ui.drop(bar)
 		}
 	}
 }
