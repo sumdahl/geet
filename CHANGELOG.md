@@ -7,6 +7,8 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-09-19
+
 ### Fixed
 - Songs whose artist YouTube knows by a shorter name now match: Spotify's
   "Kush Band Nepal" is "KUSH" on YouTube, and "Harayeko Graha" failed with
@@ -262,7 +264,8 @@ First release.
   YouTube. Ctrl+C leaves no partial files, and re-running resumes.
 - `geet version` shows the release, commit and date.
 
-[Unreleased]: https://github.com/sumdahl/geet/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/sumdahl/geet/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/sumdahl/geet/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/sumdahl/geet/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/sumdahl/geet/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/sumdahl/geet/compare/v0.3.0...v0.4.0
