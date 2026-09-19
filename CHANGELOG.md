@@ -7,6 +7,8 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-09-19
+
 ### Fixed
 - A song whose YouTube upload asks for a sign-in ("Please sign in", with no
   age restriction) no longer fails after retrying the same video: geet now
@@ -284,7 +286,8 @@ First release.
   YouTube. Ctrl+C leaves no partial files, and re-running resumes.
 - `geet version` shows the release, commit and date.
 
-[Unreleased]: https://github.com/sumdahl/geet/compare/v0.4.4...HEAD
+[Unreleased]: https://github.com/sumdahl/geet/compare/v0.4.5...HEAD
+[0.4.5]: https://github.com/sumdahl/geet/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/sumdahl/geet/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/sumdahl/geet/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/sumdahl/geet/compare/v0.4.1...v0.4.2
