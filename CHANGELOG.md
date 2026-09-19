@@ -7,6 +7,8 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-09-19
+
 ### Fixed
 - A song saved in two folders is no longer downloaded again after one copy
   is deleted: the download index now remembers every copy, and links from
@@ -275,7 +277,8 @@ First release.
   YouTube. Ctrl+C leaves no partial files, and re-running resumes.
 - `geet version` shows the release, commit and date.
 
-[Unreleased]: https://github.com/sumdahl/geet/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/sumdahl/geet/compare/v0.4.4...HEAD
+[0.4.4]: https://github.com/sumdahl/geet/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/sumdahl/geet/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/sumdahl/geet/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/sumdahl/geet/compare/v0.4.0...v0.4.1
