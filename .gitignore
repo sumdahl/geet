@@ -30,3 +30,6 @@ cover.html
 *.swp
 *~
 .DS_Store
+
+# Serena tool cache (local only)
+.serena/

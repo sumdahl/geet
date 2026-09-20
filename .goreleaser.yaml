@@ -24,8 +24,15 @@ builds:
 # Plain binaries named geet-<os>-<arch>: install.sh and the links in older
 # release notes download exactly these names.
 archives:
-  - formats: [binary]
+  - id: binary
+    formats: [binary]
     name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+  # A tarball as well, for the AUR package: makepkg needs an archive, and
+  # one carrying the LICENSE and README is what an Arch package installs.
+  - id: targz
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, README.md, CHANGELOG.md]
 
 checksum:
   name_template: SHA256SUMS
@@ -55,6 +62,35 @@ release:
     You also need `yt-dlp` and `ffmpeg` (`sudo pacman -S yt-dlp ffmpeg`, or `brew install yt-dlp ffmpeg` on macOS). To download a binary yourself, pick `geet-<linux|darwin>-<amd64|arm64>` below and check it with `sha256sum -c SHA256SUMS --ignore-missing`. Every binary is attested: `gh attestation verify <file> -R sumdahl/geet` proves this repository's release workflow built it.
 
     **Full changelog**: https://github.com/sumdahl/geet/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+# geet-bin in the AUR: the released binary, not a source build. GoReleaser
+# generates the PKGBUILD from the tar.gz archives and pushes it to the AUR
+# repo on every release.
+aurs:
+  - name: geet-bin
+    ids: [targz]
+    homepage: https://github.com/sumdahl/geet
+    description: 'Download Spotify tracks, albums and playlists as tagged audio (yt-dlp + ffmpeg)'
+    maintainers: ['Sumiran Dahal <sumirandahal46 at gmail dot com>']
+    license: MIT
+    private_key: '{{ .Env.AUR_KEY }}'
+    git_url: ssh://aur@aur.archlinux.org/geet-bin.git
+    # Flip to false once the AUR account exists and the AUR_KEY secret is
+    # set: AUR registration was closed when this was written.
+    skip_upload: true
+    provides: [geet]
+    conflicts: [geet]
+    depends: [yt-dlp, ffmpeg]
+    optdepends:
+      - 'fzf: interactive picker for geet search'
+      - 'wl-clipboard: clipboard watching (geet watch)'
+      - 'libnotify: desktop notifications (geet watch)'
+      - 'xdg-utils: youtube.cookies_from_browser = "auto"'
+    package: |-
+      install -Dm755 geet "$pkgdir/usr/bin/geet"
+      install -Dm644 LICENSE "$pkgdir/usr/share/licenses/geet-bin/LICENSE"
+      install -Dm644 README.md "$pkgdir/usr/share/doc/geet-bin/README.md"
+      install -Dm644 CHANGELOG.md "$pkgdir/usr/share/doc/geet-bin/CHANGELOG.md"
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"

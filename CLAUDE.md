@@ -36,6 +36,12 @@ A Go CLI that takes a Spotify track, album or playlist URL, gets its metadata (s
 
 Linux is the target and macOS is best effort, where everything but `watch` (Wayland `wl-paste`, `notify-send`) should work. The user decided not to pursue other platforms for now: the BSDs and Windows don't compile (`syscall.Statfs` in `internal/doctor`, `syscall.Stat_t` in `internal/index`), and that's accepted. Keep new code building for `GOOS=darwin`. Releases come only from `.github/workflows/release.yml` (GoReleaser, `.goreleaser.yaml`) on a `v*` tag pushed after CI passes on `main`. The release steps are in the README, under "Continuous integration and releases". Never hand-build a release. Asset names must stay `geet-<os>-<arch>` plus `SHA256SUMS`: `install.sh` (the README's `curl … | sh` one-liner) downloads `geet-<os>-<arch>` and verifies it against `SHA256SUMS`, and v0.2.0 first shipped Linux-only, which gave a Mac user `exec format error`.
 
+## AUR (`geet-bin`)
+
+- GoReleaser's `aurs` block generates the PKGBUILD from the `targz` archives and pushes it to `ssh://aur@aur.archlinux.org/geet-bin.git` with the `AUR_KEY` secret (release.yml). **`skip_upload` is still `true`**: AUR registration was closed on 2026-09-20, so the account doesn't exist yet. To go live: create the account, add `~/.ssh/aur.pub`, put the private key in the `AUR_KEY` repo secret, set `skip_upload: false`, and release.
+- Don't hand-write a PKGBUILD: GoReleaser owns it. Test a change by running `goreleaser release --snapshot --clean`, then `makepkg` on `build/aur/geet-bin.pkgbuild` with the source URL pointed at the local tarball.
+- The plain `geet-<os>-<arch>` assets must stay: `install.sh` matches those exact names in `SHA256SUMS`.
+
 ## Installer (`install.sh`)
 
 - It's POSIX `sh`, ASCII only (bash 3.2 on macOS breaks on a non-ASCII byte after `$var`), and shellcheck-clean (`docker run --rm -v $PWD/install.sh:/i.sh:ro koalaman/shellcheck:stable -s sh /i.sh`).
