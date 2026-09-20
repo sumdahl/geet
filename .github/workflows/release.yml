@@ -36,6 +36,9 @@ jobs:
           args: release --clean --release-notes ${{ runner.temp }}/notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pushes the geet-bin PKGBUILD to the AUR. Unused while
+          # aurs.skip_upload is true in .goreleaser.yaml.
+          AUR_KEY: ${{ secrets.AUR_KEY }}
       - uses: actions/attest-build-provenance@v4
         with:
           subject-checksums: build/SHA256SUMS

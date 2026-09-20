@@ -7,6 +7,13 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Added
+- Releases also carry `geet_<version>_<os>_<arch>.tar.gz` archives (with the
+  LICENSE, README and changelog) beside the plain `geet-<os>-<arch>`
+  binaries, and a `geet-bin` PKGBUILD for the AUR is generated from them.
+  Pushing it to the AUR is still switched off (`aurs.skip_upload`): AUR
+  account registration is closed at the moment.
+
 ## [0.4.5] - 2026-09-19
 
 ### Fixed
