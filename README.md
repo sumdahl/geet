@@ -77,6 +77,14 @@ curl -fsSL https://raw.githubusercontent.com/sumdahl/geet/main/install.sh | sh -
 
 `--version v0.2.0` pins a release, `--dir DIR` installs elsewhere, and `--help` lists everything. The same settings are available as `GEET_VERSION`, `GEET_INSTALL_DIR` and `GEET_DEPS` (`all`, `required` or `none`). Then run `geet doctor` to check that everything works.
 
+**Or with Homebrew** (macOS or Linux), which handles upgrades along with the rest of your packages:
+
+```sh
+brew install sumdahl/geet/geet
+```
+
+It brings yt-dlp and ffmpeg with it. `brew upgrade` then keeps geet current.
+
 Or download a binary yourself: `geet-linux-amd64`, `geet-linux-arm64`, `geet-darwin-amd64` or `geet-darwin-arm64` from [Releases](https://github.com/sumdahl/geet/releases). Each is a single static file. On macOS, a binary saved from a web browser is quarantined, and macOS won't open it until you run `xattr -d com.apple.quarantine <file>`. `exec format error` means the binary is for another system, such as the Linux one on a Mac.
 
 **Or build from source** (Go 1.27+):

@@ -78,9 +78,6 @@ homebrew_casks:
       branch: main
       # The workflow's own GITHUB_TOKEN can't push to another repository.
       token: '{{ .Env.HOMEBREW_TAP_TOKEN }}'
-    # Flip to false once the HOMEBREW_TAP_TOKEN secret is set: without it
-    # the release would fail on the missing variable.
-    skip_upload: true
     dependencies:
       - formula: yt-dlp
       - formula: ffmpeg
