@@ -39,7 +39,7 @@ Linux is the target and macOS is best effort, where everything but `watch` (Wayl
 ## Homebrew tap (`sumdahl/homebrew-geet`)
 
 - A **cask**, not a formula: GoReleaser deprecated `brews` (formulas shipping a prebuilt binary) in v2.10 in favour of `homebrew_casks`. The generated cask carries a `postflight` `xattr -dr com.apple.quarantine` hook, because the binaries aren't signed or notarized and macOS would otherwise kill geet as "damaged".
-- It's pushed to the tap repo with the `HOMEBREW_TAP_TOKEN` secret (a PAT with Contents: write on `homebrew-geet`); the workflow's own `GITHUB_TOKEN` can't write to another repository. **`skip_upload` is still `true`** until that secret exists.
+- It's pushed to the tap repo with the `HOMEBREW_TAP_TOKEN` secret (a PAT with Contents: write on `homebrew-geet`); the workflow's own `GITHUB_TOKEN` can't write to another repository.
 - Users then run `brew install sumdahl/geet/geet`. homebrew-core (plain `brew install geet`) needs real notability (roughly 75+ stars) and is a later move.
 
 ## AUR (`geet-bin`)
