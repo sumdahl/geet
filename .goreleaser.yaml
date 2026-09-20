@@ -63,6 +63,36 @@ release:
 
     **Full changelog**: https://github.com/sumdahl/geet/compare/{{ .PreviousTag }}...{{ .Tag }}
 
+# The Homebrew tap (github.com/sumdahl/homebrew-geet): "brew install
+# sumdahl/geet/geet". A cask, not a formula: GoReleaser deprecated
+# formulas that ship a prebuilt binary (brews, v2.10) in favour of casks.
+homebrew_casks:
+  - name: geet
+    ids: [targz]
+    homepage: https://github.com/sumdahl/geet
+    description: 'Download Spotify tracks, albums and playlists as tagged audio (yt-dlp + ffmpeg)'
+    license: MIT
+    repository:
+      owner: sumdahl
+      name: homebrew-geet
+      branch: main
+      # The workflow's own GITHUB_TOKEN can't push to another repository.
+      token: '{{ .Env.HOMEBREW_TAP_TOKEN }}'
+    # Flip to false once the HOMEBREW_TAP_TOKEN secret is set: without it
+    # the release would fail on the missing variable.
+    skip_upload: true
+    dependencies:
+      - formula: yt-dlp
+      - formula: ffmpeg
+    # The binaries aren't signed or notarized, so macOS quarantines them:
+    # without this, geet is killed as "damaged" on first run.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/geet"]
+          end
+
 # geet-bin in the AUR: the released binary, not a source build. GoReleaser
 # generates the PKGBUILD from the tar.gz archives and pushes it to the AUR
 # repo on every release.

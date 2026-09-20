@@ -39,6 +39,8 @@ jobs:
           # Pushes the geet-bin PKGBUILD to the AUR. Unused while
           # aurs.skip_upload is true in .goreleaser.yaml.
           AUR_KEY: ${{ secrets.AUR_KEY }}
+          # Pushes the formula to github.com/sumdahl/homebrew-geet.
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
       - uses: actions/attest-build-provenance@v4
         with:
           subject-checksums: build/SHA256SUMS
