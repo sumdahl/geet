@@ -7,6 +7,24 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Added
+- `geet play` — geet is a player as well as a downloader. With no argument it
+  plays your library, newest first; given words it plays what matches (and
+  offers the catalogue when nothing does); given a link or an
+  `itunes:`/`deezer:` ref it plays what you already have and downloads what
+  you don't.
+- The player screen shows the song, a progress bar, a spectrum drawn from a
+  real FFT of the audio, and synced lyrics from LRCLIB that follow the beat.
+  Songs without lyrics say so quietly and give the space back to the
+  spectrum; unsynced lyrics are marked as such. Keys: space, ←/→ (shift for
+  30s), n/p, v, y, q.
+- `geet play --json` streams playback as NDJSON (`track`, `playing`,
+  `paused`, `position`, `stopped`) for the Omarchy plugin.
+- Playback uses mpv through its IPC socket, which is what makes the position
+  exact enough for lyrics; ffplay (part of ffmpeg) is the fallback. New
+  settings: `player.engine`, `player.visualizer`, `player.lyrics`,
+  `player.shuffle`, `player.repeat`, `player.mpv`, `player.ffplay`.
+
 ## [0.4.6] - 2026-09-20
 
 ### Added

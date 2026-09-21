@@ -28,6 +28,7 @@ playlist "Daily Mix 1": 50 track(s) → /home/you/Music/daily-mix-1
 - Go 1.27+ to build
 - [`yt-dlp`](https://github.com/yt-dlp/yt-dlp), `ffmpeg` and `ffprobe` on `PATH`. The paths are configurable.
 - For `geet watch` only: a Wayland session with `wl-paste` (wl-clipboard), and `notify-send` (libnotify) for notifications.
+- For `geet play`: [`mpv`](https://mpv.io) is recommended. Without it geet falls back to `ffplay`, which comes with ffmpeg but cannot seek or report an exact position, so lyrics follow less closely.
 
 ```sh
 sudo pacman -S yt-dlp ffmpeg wl-clipboard libnotify   # Arch / Omarchy
@@ -111,6 +112,7 @@ Releases follow [Semantic Versioning](https://semver.org/), and the changes are 
 ```sh
 geet download <spotify-url>        # a track, album or playlist
 geet search <words…>               # find a song by name, pick it, download it
+geet play [words… | link]          # play your library (or a song), with a spectrum and lyrics
 geet doctor                        # health check: tools, setup, services, and how to fix problems
 geet config                        # effective configuration (TOML; --json for JSON)
 geet config path                   # where the config file lives
@@ -318,6 +320,53 @@ YouTube's best audio is about 130–160 kbps Opus (256 kbps AAC with YouTube Pre
 | `--format mp3` | VBR V0 (~245 kbps) |
 | `--format mp3 --bitrate 320k` | Works, with a warning: the file gets bigger but not better |
 | `--format flac` | Works, with a warning: lossless packaging of lossy audio |
+
+### Playing (`geet play`)
+
+geet is a player as well as a downloader:
+
+```sh
+geet play                          # your whole library, newest first
+geet play bartika najeek           # whatever in your library matches those words
+geet play <spotify-url>            # a song, album or playlist: plays what you have, downloads the rest
+geet play ~/Music/90s-mix          # a folder
+```
+
+The screen shows the song, how far along it is, a spectrum drawn from the
+audio itself, and lyrics that follow the beat:
+
+```
+  Najeek                                                     ▶  1:42 / 5:12
+  Bartika Eam Rai  ·  Bimbaakash
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━─────────────────────────────────────────
+
+     ▁▃▅▇█▇▅▃▁▂▄▆█▆▄▂▁▃▅▇                 timi sanga bitayeko
+     ▂▄▆█▆▄▂▁▃▅▇█▇▅▃▁▂▄▆                ▸ ti din haru najeek
+     ▃▅▇█▇▅▃▁▂▄▆█▆▄▂▁▃▅▇                  pheri farkera aaunchha ki
+
+  3 of 18                     space pause  ·  ←/→ seek  ·  n next  ·  q quit
+```
+
+| Key | What it does |
+|---|---|
+| `space` | pause and resume |
+| `←` `→` | back or forward 5 seconds (`shift` for 30) |
+| `n` `p` | next song, or previous (`p` restarts the song first) |
+| `v` `y` | show or hide the spectrum, the lyrics |
+| `q` | quit |
+
+- **Lyrics** come from [LRCLIB](https://lrclib.net), which needs no account.
+  Plenty of songs have none — instrumentals, new releases, local-language
+  music — and that is not an error: the pane says so and the spectrum takes
+  the space. Lyrics without timings are shown and marked as such. What is
+  found (and what isn't) is cached in `~/.cache/geet/lyrics`.
+- **The spectrum** is geet's own: ffmpeg decodes the playing file to raw
+  audio and geet runs an FFT over it, so there is nothing else to install.
+- **mpv** plays the audio through its control socket, which is what makes
+  the position exact enough for lyrics. With `mpv-mpris` installed, whatever
+  shows your now-playing (the Omarchy bar, playerctl) sees geet too.
+- `geet play --json` plays with no screen and streams what it is doing, for
+  the Omarchy plugin.
 
 ## Configuration
 
