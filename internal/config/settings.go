@@ -51,6 +51,7 @@ func (c *Config) Settings() []Setting {
 		{Key: "search.picker", Usage: "how search results are picked: auto (fzf if installed), fzf or list (numbered prompt)", ptr: &c.Search.Picker},
 		{Key: "search.confirm", Usage: "ask before downloading songs picked from the search menu (--pick never asks)", ptr: &c.Search.Confirm},
 		{Key: "player.engine", Usage: "what geet play uses for audio: auto (mpv when installed, else ffplay), mpv or ffplay. Only mpv can seek and report an exact position, which synced lyrics need", ptr: &c.Player.Engine},
+		{Key: "player.stream", Usage: "play a song that isn't downloaded straight from YouTube, so it starts in seconds; \"d\" while it plays keeps a proper copy. Off downloads first, as before", ptr: &c.Player.Stream},
 		{Key: "player.visualizer", Usage: "show the spectrum beside the song while it plays", ptr: &c.Player.Visualizer},
 		{Key: "player.lyrics", Usage: "look up synced lyrics (LRCLIB) and follow them while the song plays; songs without lyrics simply show none", ptr: &c.Player.Lyrics},
 		{Key: "player.shuffle", Usage: "play a queue in random order", ptr: &c.Player.Shuffle},

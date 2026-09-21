@@ -16,13 +16,33 @@ import (
 	"github.com/sumdahl/geet/internal/textnorm"
 )
 
-// Item is one entry in the play queue: a file on disk, and whatever is
-// known about the song in it.
+// Item is one entry in the play queue. It is either a file on disk or a
+// song to stream: geet plays what you already have straight from the
+// library, and anything else from YouTube while you decide whether to keep
+// it.
 type Item struct {
-	Path  string
+	Path  string // empty for a song that is not downloaded
 	Track spotify.Track
 	// Added is the file's modification time, which is when geet saved it.
 	Added time.Time
+	// Stream is filled in when the song is played without downloading. It
+	// is resolved as the song comes up, not in advance: finding a whole
+	// playlist on YouTube before the first note would take a minute.
+	Stream Stream
+	// Saving marks a streaming song the listener asked geet to keep.
+	Saving bool
+}
+
+// Downloaded reports whether the song is a file geet can play offline.
+func (i Item) Downloaded() bool { return i.Path != "" }
+
+// Source is what to hand the player: the file when there is one, else the
+// stream.
+func (i Item) Source() string {
+	if i.Path != "" {
+		return i.Path
+	}
+	return i.Stream.Direct
 }
 
 // Name is what a display calls this item, whether or not tags were read.
@@ -32,6 +52,9 @@ func (i Item) Name() string {
 			return artists + " — " + i.Track.Title
 		}
 		return i.Track.Title
+	}
+	if i.Path == "" {
+		return "unknown song"
 	}
 	return strings.TrimSuffix(filepath.Base(i.Path), filepath.Ext(i.Path))
 }

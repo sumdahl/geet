@@ -7,6 +7,15 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Added
+- `geet play` now plays without downloading first. A song in your library
+  plays from disk; anything else streams from the same YouTube match a
+  download would use, so it starts in a couple of seconds. **`d` keeps the
+  song**: it downloads a tagged copy in the background while the music
+  carries on. The next song in a queue is found while the current one
+  plays, so there is no gap. `player.stream = false` restores the old
+  download-first behaviour.
+
 ### Fixed
 - Nepali (and other Indic) lyrics no longer overlap the spectrum in the
   player. Terminals draw Devanagari clusters at widths Unicode doesn't

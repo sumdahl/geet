@@ -323,14 +323,21 @@ YouTube's best audio is about 130–160 kbps Opus (256 kbps AAC with YouTube Pre
 
 ### Playing (`geet play`)
 
-geet is a player as well as a downloader:
+geet is a player as well as a downloader, and it plays straight away:
 
 ```sh
 geet play                          # your whole library, newest first
 geet play bartika najeek           # whatever in your library matches those words
-geet play <spotify-url>            # a song, album or playlist: plays what you have, downloads the rest
+geet play <spotify-url>            # a song, album or playlist — starts in seconds
 geet play ~/Music/90s-mix          # a folder
 ```
+
+**Nothing is downloaded to listen.** A song you already have plays from the
+library, offline and instantly. Anything else streams: geet finds the same
+YouTube match a download would use and plays it, which takes a couple of
+seconds. Press **`d`** while it plays to keep a proper tagged copy — the
+download runs in the background and the music doesn't stop. Set
+`player.stream = false` to go back to downloading before playing.
 
 The screen shows the song, how far along it is, a spectrum drawn from the
 audio itself, and lyrics that follow the beat:
@@ -352,6 +359,7 @@ audio itself, and lyrics that follow the beat:
 | `space` | pause and resume |
 | `←` `→` | back or forward 5 seconds (`shift` for 30) |
 | `n` `p` | next song, or previous (`p` restarts the song first) |
+| `d` | keep the streaming song: download it, tagged, without interrupting playback |
 | `v` `y` | show or hide the spectrum, the lyrics |
 | `q` | quit |
 
