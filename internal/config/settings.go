@@ -58,6 +58,8 @@ func (c *Config) Settings() []Setting {
 		{Key: "player.repeat", Usage: "start the queue again when it ends instead of quitting", ptr: &c.Player.Repeat},
 		{Key: "player.mpv", Usage: "mpv executable, used by geet play", ptr: &c.Player.MPV},
 		{Key: "player.ffplay", Usage: "ffplay executable (ships with ffmpeg), the fallback player", ptr: &c.Player.FFplay},
+		{Key: "trending.source", Usage: "where geet trending reads the chart: auto (Deezer, topped up from Apple), deezer (localised by your connection) or apple (your search.country store)", ptr: &c.Trending.Source},
+		{Key: "trending.cache_for", Usage: "how long a chart is kept before geet reads it again; charts move slowly, and this keeps the panel instant", ptr: &c.Trending.CacheFor},
 		{Key: "watch.interval", Usage: "how often geet watch checks the clipboard for a new link", ptr: &c.Watch.Interval},
 		{Key: "watch.notify", Usage: "geet watch shows a desktop notification (with the cover) when a link starts, finishes or fails", ptr: &c.Watch.Notify},
 		{Key: "tools.yt_dlp", Usage: "yt-dlp executable", ptr: &c.Tools.YtDlp},

@@ -63,6 +63,23 @@ func playCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		nothingToPlay(cfg, target, stderr)
 		return exitPartial
 	}
+	return playItems(ctx, c, cfg, items, stdout, stderr)
+}
+
+// playTracks plays songs another command picked (the trending chart), with
+// the same rules: from the library when they are there, streamed when they
+// are not.
+func playTracks(ctx context.Context, c *cli, cfg config.Config, tracks []spotify.Track, stdout, stderr io.Writer) int {
+	items := queueFor(cfg, tracks)
+	if len(items) == 0 {
+		fmt.Fprintln(stderr, "Nothing to play.")
+		return exitPartial
+	}
+	return playItems(ctx, c, cfg, items, stdout, stderr)
+}
+
+// playItems opens the player on a ready queue.
+func playItems(ctx context.Context, c *cli, cfg config.Config, items []player.Item, stdout, stderr io.Writer) int {
 	if cfg.Player.Shuffle {
 		player.Shuffle(items)
 	}

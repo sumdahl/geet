@@ -8,6 +8,15 @@ still change the CLI, the configuration or the `--json` output.
 ## [Unreleased]
 
 ### Added
+- `geet trending` — what people are playing now. Deezer's chart (localised
+  by where you are, so Nepali songs appear alongside the global hits),
+  topped up from Apple's most-played feed for your store country. Pick one
+  and it plays; `--pick` downloads instead; `--json` gives a front end the
+  same rows `geet search` does, plus a rank. Charts are cached for
+  `trending.cache_for` (6h), and a failed read falls back to the last
+  chart rather than showing nothing.
+
+### Added
 - `geet play` now plays without downloading first. A song in your library
   plays from disk; anything else streams from the same YouTube match a
   download would use, so it starts in a couple of seconds. **`d` keeps the

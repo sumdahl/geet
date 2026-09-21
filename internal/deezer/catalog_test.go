@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +23,8 @@ func newCatalogClient(t *testing.T) *Client {
 		switch {
 		case r.URL.Path == "/search" && r.URL.Query().Get("q") == "enrique iglesias tonight":
 			name = "search_enrique_iglesias_tonight.json"
+		case r.URL.Path == "/chart/0/tracks":
+			name = "chart_tracks.json"
 		case r.URL.Path == "/track/10202476":
 			name = "track_10202476.json"
 		default:
@@ -116,5 +119,43 @@ func TestParseRef(t *testing.T) {
 		if !IsRef(tt.in) {
 			t.Errorf("IsRef(%q) = false", tt.in)
 		}
+	}
+}
+
+// The chart is what the trending list is built from: real songs with the
+// artist, album art and a ref geet can play or download.
+func TestChart(t *testing.T) {
+	c := newCatalogClient(t)
+	tracks, err := c.Chart(context.Background(), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tracks) == 0 {
+		t.Fatal("the chart came back empty")
+	}
+	for i, tr := range tracks {
+		if tr.Title == "" || len(tr.Artists) == 0 {
+			t.Errorf("track %d has no title or artist: %+v", i, tr)
+		}
+		if !strings.HasPrefix(tr.ID, RefPrefix) {
+			t.Errorf("track %d ref %q is not playable by geet", i, tr.ID)
+		}
+		if tr.CoverURL == "" {
+			t.Errorf("track %d has no cover, which the panel needs", i)
+		}
+		if tr.Duration <= 0 {
+			t.Errorf("track %d has no length", i)
+		}
+	}
+}
+
+// A silly limit must not reach the API as-is.
+func TestChartClampsLimit(t *testing.T) {
+	c := newCatalogClient(t)
+	if _, err := c.Chart(context.Background(), 0); err != nil {
+		t.Errorf("limit 0: %v", err)
+	}
+	if _, err := c.Chart(context.Background(), 5000); err != nil {
+		t.Errorf("limit 5000: %v", err)
 	}
 }

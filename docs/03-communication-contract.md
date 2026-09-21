@@ -125,6 +125,18 @@ Prints one JSON array (not NDJSON) of ranked results and downloads nothing:
 - `geet download` accepts `itunes:<id>` refs and Apple Music song links.
 - `geet search <words…> --pick 1,3` downloads without a menu.
 
+## Trending (`geet trending --json`)
+One JSON array, the same shape as `geet search --json` plus a `rank`, so a
+front end reuses the row it already draws:
+```json
+[{"rank":1,"index":1,"ref":"deezer:3818963601","title":"Dracula (with JENNIE)",
+  "artists":["Tame Impala"],"album":"Dracula (with JENNIE)","duration_ms":209000,
+  "cover_url":"https://…/1000x1000-000000-80-0-0.jpg","label":"Dracula (with JENNIE) — Tame Impala 3:29 [E]"}]
+```
+The chart is cached (`trending.cache_for`, 6h by default), so repeated calls
+cost nothing and a front end can read it on every panel open. `geet play
+<ref>` plays a row; `geet download <ref>` keeps it.
+
 ## Health (`geet doctor --json`)
 One JSON object, for the plugin to show a status or to explain failing downloads:
 ```json
