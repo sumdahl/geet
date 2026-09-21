@@ -89,6 +89,7 @@ type Search struct {
 // Player configures `geet play`, the terminal player.
 type Player struct {
 	Engine     string `toml:"engine" json:"engine"`
+	Stream     bool   `toml:"stream" json:"stream"`
 	Visualizer bool   `toml:"visualizer" json:"visualizer"`
 	Lyrics     bool   `toml:"lyrics" json:"lyrics"`
 	Shuffle    bool   `toml:"shuffle" json:"shuffle"`
@@ -149,7 +150,7 @@ func Default() Config {
 		},
 		Spotify: Spotify{CacheDays: 30},
 		Search:  Search{Country: "US", Limit: 15, Picker: "auto", Confirm: true},
-		Player:  Player{Engine: "auto", Visualizer: true, Lyrics: true, MPV: "mpv", FFplay: "ffplay"},
+		Player:  Player{Engine: "auto", Stream: true, Visualizer: true, Lyrics: true, MPV: "mpv", FFplay: "ffplay"},
 		Watch:   Watch{Interval: Duration{time.Second}, Notify: true},
 		Tools:   Tools{YtDlp: "yt-dlp", FFmpeg: "ffmpeg", FFprobe: "ffprobe", WlPaste: "wl-paste", NotifySend: "notify-send"},
 	}

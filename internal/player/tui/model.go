@@ -26,6 +26,12 @@ type Options struct {
 	FFprobe    string
 	Visualizer bool
 	Repeat     bool
+	// Streamer plays songs that are not downloaded. Without it, such a
+	// song is skipped.
+	Streamer *player.Streamer
+	// Save keeps a streaming song: it downloads the track and returns the
+	// file. It runs off the display goroutine and may take a while.
+	Save func(context.Context, spotify.Track) (string, error)
 	// OnEvent reports playback for `--json`. It may be nil.
 	OnEvent func(Event)
 }
@@ -76,6 +82,8 @@ type Model struct {
 	lyrErr   string
 	note     string // a transient line under the header
 	noteAt   time.Time
+	finding  bool   // resolving a stream for the current song
+	saveErr  string // why the last "keep this song" failed
 
 	width, height int
 	quitting      bool
@@ -118,6 +126,16 @@ type lyricsMsg struct {
 	lyr lyrics.Lyrics
 	err error
 }
+type streamMsg struct {
+	idx    int
+	stream player.Stream
+	err    error
+}
+type savedMsg struct {
+	idx  int
+	path string
+	err  error
+}
 
 func tick() tea.Cmd {
 	return tea.Tick(tickEvery, func(t time.Time) tea.Msg { return tickMsg(t) })
@@ -151,24 +169,82 @@ func (m *Model) startTrack(i int) tea.Cmd {
 	m.lyrErr = ""
 	m.lyrState = lyricsIdle
 	m.levels = nil
+	m.saveErr = ""
 
 	it := m.items[i]
-	if err := m.opts.Engine.Play(m.ctx, it.Path); err != nil {
-		m.note = "could not play " + it.Name() + ": " + err.Error()
-		m.noteAt = time.Now()
+
+	// Not downloaded and not resolved yet: find it on YouTube first. The
+	// song plays a couple of seconds later, rather than after a download.
+	if !it.Downloaded() && it.Stream.Direct == "" {
+		if m.opts.Streamer == nil {
+			m.setNote(it.Name() + " isn't downloaded, and streaming is off")
+			return m.skip(1)
+		}
+		m.finding = true
+		cmds := []tea.Cmd{m.resolveStream(i, it.Track)}
+		if it.Track.Title != "" && m.showLyr {
+			m.lyrState = lyricsLoading
+			cmds = append(cmds, m.fetchLyrics(i, it.Track))
+		}
+		return tea.Batch(cmds...)
+	}
+
+	return m.playCurrent()
+}
+
+// playCurrent starts whatever the current item points at, a file or a
+// stream, and kicks off the work that decorates it.
+func (m *Model) playCurrent() tea.Cmd {
+	m.finding = false
+	it := m.items[m.idx]
+	if err := m.opts.Engine.Play(m.ctx, it.Source()); err != nil {
+		m.setNote("could not play " + it.Name() + ": " + err.Error())
 		return m.skip(1)
 	}
 	m.emit("track", 0)
 
-	cmds := []tea.Cmd{m.readTags(i, it)}
-	if m.showVis {
-		cmds = append(cmds, m.startSpectrum(it.Path, 0))
+	var cmds []tea.Cmd
+	if c := m.readTags(m.idx, it); c != nil {
+		cmds = append(cmds, c)
 	}
-	if it.Track.Title != "" && m.showLyr {
+	if m.showVis {
+		cmds = append(cmds, m.startSpectrum(it.Source(), 0))
+	}
+	if it.Track.Title != "" && m.showLyr && m.lyrState == lyricsIdle {
 		m.lyrState = lyricsLoading
-		cmds = append(cmds, m.fetchLyrics(i, it.Track))
+		cmds = append(cmds, m.fetchLyrics(m.idx, it.Track))
+	}
+	// Find the next song while this one plays, so the queue runs on
+	// without a pause between songs.
+	if c := m.prefetchNext(); c != nil {
+		cmds = append(cmds, c)
 	}
 	return tea.Batch(cmds...)
+}
+
+func (m *Model) resolveStream(i int, t spotify.Track) tea.Cmd {
+	streamer := m.opts.Streamer
+	if streamer == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		st, err := streamer.Resolve(m.ctx, t)
+		return streamMsg{idx: i, stream: st, err: err}
+	}
+}
+
+// prefetchNext resolves the next song's stream ahead of time. A failure is
+// silent here: it is reported when that song actually comes up.
+func (m *Model) prefetchNext() tea.Cmd {
+	next := m.idx + 1
+	if next >= len(m.items) || m.opts.Streamer == nil {
+		return nil
+	}
+	it := m.items[next]
+	if it.Downloaded() || it.Stream.Direct != "" || it.Track.Title == "" {
+		return nil
+	}
+	return m.resolveStream(next, it.Track)
 }
 
 func (m *Model) readTags(i int, it player.Item) tea.Cmd {
@@ -288,6 +364,41 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case streamMsg:
+		if msg.idx >= len(m.items) {
+			return m, nil
+		}
+		if msg.err != nil {
+			if msg.idx != m.idx {
+				return m, nil // a prefetch: report it when the song comes up
+			}
+			m.finding = false
+			m.setNote("couldn't play " + m.items[msg.idx].Name() + ": " + msg.err.Error())
+			return m, m.skip(1)
+		}
+		m.items[msg.idx].Stream = msg.stream
+		if msg.idx != m.idx {
+			return m, nil // prefetched, ready for later
+		}
+		if msg.stream.Warning != "" {
+			m.setNote(msg.stream.Warning)
+		}
+		return m, m.playCurrent()
+
+	case savedMsg:
+		if msg.idx >= len(m.items) {
+			return m, nil
+		}
+		m.items[msg.idx].Saving = false
+		if msg.err != nil {
+			m.saveErr = msg.err.Error()
+			m.setNote("couldn't save " + m.items[msg.idx].Name() + ": " + msg.err.Error())
+			return m, nil
+		}
+		m.items[msg.idx].Path = msg.path
+		m.setNote("saved " + m.items[msg.idx].Name())
+		return m, nil
+
 	case lyricsMsg:
 		if msg.idx != m.idx {
 			return m, nil
@@ -324,7 +435,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.emit("playing", m.status.Position)
 			// The tap stopped with the pause; restart it where we are.
 			if m.showVis {
-				return m, m.startSpectrum(m.items[m.idx].Path, m.status.Position)
+				return m, m.startSpectrum(m.items[m.idx].Source(), m.status.Position)
 			}
 		} else {
 			m.emit("paused", m.status.Position)
@@ -350,10 +461,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.skip(-1)
 
+	case "d", "s":
+		return m, m.saveCurrent()
+
 	case "v":
 		m.showVis = !m.showVis
 		if m.showVis {
-			return m, m.startSpectrum(m.items[m.idx].Path, m.status.Position)
+			return m, m.startSpectrum(m.items[m.idx].Source(), m.status.Position)
 		}
 		m.stopSpectrum()
 		m.levels = nil
@@ -368,6 +482,33 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
+}
+
+// saveCurrent downloads the song that is playing, so it stays in the
+// library. Playback carries on from the stream while it downloads.
+func (m *Model) saveCurrent() tea.Cmd {
+	it := m.items[m.idx]
+	switch {
+	case m.opts.Save == nil:
+		m.setNote("saving isn't available here")
+		return nil
+	case it.Downloaded():
+		m.setNote("already in your library")
+		return nil
+	case it.Saving:
+		m.setNote("already saving…")
+		return nil
+	case it.Track.Title == "":
+		m.setNote("nothing to save: this song has no details")
+		return nil
+	}
+	m.items[m.idx].Saving = true
+	m.setNote("saving " + it.Name() + "…")
+	idx, track, save := m.idx, it.Track, m.opts.Save
+	return func() tea.Msg {
+		path, err := save(m.ctx, track)
+		return savedMsg{idx: idx, path: path, err: err}
+	}
 }
 
 func (m *Model) seek(delta time.Duration) tea.Cmd {
@@ -387,7 +528,7 @@ func (m *Model) seek(delta time.Duration) tea.Cmd {
 	if at < 0 {
 		at = 0
 	}
-	return m.startSpectrum(m.items[m.idx].Path, at)
+	return m.startSpectrum(m.items[m.idx].Source(), at)
 }
 
 func (m *Model) restart() tea.Cmd {

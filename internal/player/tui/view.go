@@ -102,14 +102,37 @@ func (m *Model) header(width int) string {
 		}
 		sub += it.Track.Album
 	}
-	if sub == "" {
+	if sub == "" && it.Path != "" {
 		sub = shortPath(it.Path)
+	}
+	if badge := m.sourceBadge(); badge != "" {
+		if sub != "" {
+			sub += "  ·  "
+		}
+		sub += badge
 	}
 	return line1 + "\n" + subSt.Render(Truncate(sub, width, "…"))
 }
 
+// sourceBadge says where the sound is coming from, so "streaming" never
+// looks like "downloaded" and a save in progress is visible.
+func (m *Model) sourceBadge() string {
+	it := m.items[m.idx]
+	switch {
+	case it.Saving:
+		return "streaming · saving to your library…"
+	case it.Downloaded():
+		return ""
+	default:
+		return "streaming · d to keep"
+	}
+}
+
 // timeLabel is the state and the clock: "▶  1:42 / 5:12".
 func (m *Model) timeLabel() string {
+	if m.finding {
+		return "finding on YouTube…"
+	}
 	icon := "▶"
 	if !m.status.Playing {
 		icon = "❚❚"
@@ -290,6 +313,9 @@ func (m *Model) footer(width int) string {
 		left = fmt.Sprintf("%d of %d", m.idx+1, len(m.items))
 	}
 	keys := []string{"space pause", "←/→ seek", "n next", "q quit"}
+	if !m.items[m.idx].Downloaded() && !m.items[m.idx].Saving {
+		keys = []string{"space pause", "←/→ seek", "d keep", "n next", "q quit"}
+	}
 	if width < 60 {
 		keys = []string{"space", "←/→", "n", "q"}
 	}

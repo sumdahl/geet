@@ -20,6 +20,8 @@ import (
 	"github.com/sumdahl/geet/internal/player"
 	"github.com/sumdahl/geet/internal/player/tui"
 	"github.com/sumdahl/geet/internal/spotify"
+	"github.com/sumdahl/geet/internal/youtube"
+	"github.com/sumdahl/geet/internal/ytdlp"
 )
 
 // playEvent is one line of `geet play --json`. It follows the download
@@ -77,6 +79,10 @@ func playCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		lyr = lyrics.New()
 	}
 	opts := tui.Options{
+		Streamer: newStreamer(cfg),
+		Save: func(ctx context.Context, t spotify.Track) (string, error) {
+			return saveTrack(ctx, c, t, stdout, stderr)
+		},
 		Items:      items,
 		Engine:     engine,
 		EngineName: engineName,
@@ -190,27 +196,33 @@ func isPlayableLink(s string) bool {
 	return err == nil
 }
 
-// playLink downloads a link's tracks (skipping what the index already has)
-// and returns their files in order.
+// playLink reads a link's tracks and queues them: whatever is downloaded
+// plays from the library, the rest streams.
 func playLink(ctx context.Context, c *cli, link string, stdout, stderr io.Writer) ([]player.Item, error) {
 	rep, cfg, err := prepare(c, stdout, stderr)
 	if err != nil {
 		return nil, err
 	}
-	rep.setUI(chooseUI(cfg.Progress, stderr, c.json))
-	setupLogging(rep.ui.writer(), c.verbose)
+	setupLogging(stderr, c.verbose)
 
-	col, lateTags, err := readLink(ctx, cfg, rep, link)
+	col, _, err := readLink(ctx, cfg, rep, link)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := runDownload(ctx, cfg, rep, col, lateTags); err != nil {
-		return nil, err
+	if !cfg.Player.Stream {
+		// Download-first, the old behaviour, for anyone who wants the
+		// files before the music.
+		rep.setUI(chooseUI(cfg.Progress, stderr, c.json))
+		if _, err := runDownload(ctx, cfg, rep, col, true); err != nil {
+			return nil, err
+		}
+		return itemsFor(cfg, col.Tracks), nil
 	}
-	return itemsFor(cfg, col.Tracks), nil
+	return queueFor(cfg, col.Tracks), nil
 }
 
-// playSearch shows the search picker and plays what it downloads.
+// playSearch shows the search picker and plays what was picked, streaming
+// anything not already downloaded.
 func playSearch(ctx context.Context, c *cli, query string, stdout, stderr io.Writer) ([]player.Item, error) {
 	rep, cfg, err := prepare(c, stdout, stderr)
 	if err != nil {
@@ -234,13 +246,94 @@ func playSearch(ctx context.Context, c *cli, query string, stdout, stderr io.Wri
 	for i, p := range picked {
 		tracks[i] = results[p].Track
 	}
-	rep.setUI(chooseUI(cfg.Progress, stderr, c.json))
-	setupLogging(rep.ui.writer(), c.verbose)
-	col := spotify.Collection{Ref: spotify.Ref{Kind: kindSearch}, Name: query, Tracks: tracks}
-	if _, err := runDownload(ctx, cfg, rep, col, true); err != nil {
-		return nil, err
+	// A Deezer result lacks the year, ISRC and featured artists its full
+	// entry has, and lyrics matching wants them.
+	dz := deezer.New("")
+	for i, t := range tracks {
+		if id, ok := strings.CutPrefix(t.ID, deezer.RefPrefix); ok {
+			if full, err := dz.Lookup(ctx, id); err == nil {
+				tracks[i] = full
+			}
+		}
 	}
-	return itemsFor(cfg, tracks), nil
+	if !cfg.Player.Stream {
+		rep.setUI(chooseUI(cfg.Progress, stderr, c.json))
+		setupLogging(rep.ui.writer(), c.verbose)
+		col := spotify.Collection{Ref: spotify.Ref{Kind: kindSearch}, Name: query, Tracks: tracks}
+		if _, err := runDownload(ctx, cfg, rep, col, true); err != nil {
+			return nil, err
+		}
+		return itemsFor(cfg, tracks), nil
+	}
+	return queueFor(cfg, tracks), nil
+}
+
+// newStreamer plays songs that aren't downloaded, unless the config says
+// to download first.
+func newStreamer(cfg config.Config) *player.Streamer {
+	if !cfg.Player.Stream {
+		return nil
+	}
+	runner := ytdlp.Runner{
+		Binary:             cfg.Tools.YtDlp,
+		CookiesFile:        cfg.YouTube.CookiesFile,
+		CookiesFromBrowser: cfg.YouTube.CookiesFromBrowser,
+		ExtraArgs:          cfg.YouTube.ExtraArgs,
+	}
+	return &player.Streamer{
+		Runner: runner,
+		YouTube: youtube.New(youtube.Options{
+			YtDlp:           runner,
+			SearchQuery:     cfg.YouTube.SearchQuery,
+			FallbackQuery:   cfg.YouTube.FallbackQuery,
+			SearchResults:   cfg.YouTube.SearchResults,
+			MaxDurationDiff: cfg.YouTube.MaxDurationDiff.Duration,
+			MusicFallback:   cfg.YouTube.MusicFallback,
+			TitleFallback:   cfg.YouTube.TitleFallback,
+		}),
+	}
+}
+
+// saveTrack downloads the song that is playing and returns its file, so
+// "keep this" is the same download the rest of geet does — same matching,
+// tags and cover art.
+func saveTrack(ctx context.Context, c *cli, t spotify.Track, stdout, stderr io.Writer) (string, error) {
+	rep, cfg, err := prepare(c, stdout, io.Discard)
+	if err != nil {
+		return "", err
+	}
+	// The player owns the screen: the download must not draw on it.
+	rep.setUI(&plainUI{w: io.Discard})
+	col := spotify.Collection{Ref: spotify.Ref{Kind: kindSearch}, Name: t.Title, Tracks: []spotify.Track{t}}
+	if _, err := runDownload(ctx, cfg, rep, col, true); err != nil {
+		return "", err
+	}
+	items := itemsFor(cfg, []spotify.Track{t})
+	if len(items) == 0 {
+		return "", fmt.Errorf("the download finished but the file wasn't found")
+	}
+	return items[0].Path, nil
+}
+
+// queueFor turns tracks into a queue: each song plays from the library when
+// it is there, and streams when it isn't.
+func queueFor(cfg config.Config, tracks []spotify.Track) []player.Item {
+	idx, _, err := index.Open(cfg.IndexPath)
+	ext := "." + cfg.Format
+	items := make([]player.Item, 0, len(tracks))
+	for _, t := range tracks {
+		item := player.Item{Track: t}
+		if err == nil {
+			if path, ok := idx.Lookup(t.ID, t.ISRC, ext, cfg.Output); ok {
+				item.Path = path
+				if info, statErr := os.Stat(path); statErr == nil {
+					item.Added = info.ModTime()
+				}
+			}
+		}
+		items = append(items, item)
+	}
+	return items
 }
 
 // itemsFor finds each track's file through the download index. A track
