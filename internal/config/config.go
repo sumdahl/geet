@@ -28,8 +28,11 @@ var (
 	duplicateModes  = []string{"link", "copy", "skip", "download"}
 	progressAnswers = []string{"auto", "always", "never"}
 	pickers         = []string{"auto", "fzf", "list"}
-	countryCode     = regexp.MustCompile(`^[A-Za-z]{2}$`)
-	bitrate         = regexp.MustCompile(`^[1-9][0-9]*k$`)
+	// playerEngines are what player.engine accepts: auto prefers mpv, which
+	// can seek and report an exact position; ffplay only plays.
+	playerEngines = []string{"auto", "mpv", "ffplay"}
+	countryCode   = regexp.MustCompile(`^[A-Za-z]{2}$`)
+	bitrate       = regexp.MustCompile(`^[1-9][0-9]*k$`)
 )
 
 type Config struct {
@@ -49,6 +52,7 @@ type Config struct {
 	Spotify            Spotify `toml:"spotify" json:"spotify"`
 	YouTube            YouTube `toml:"youtube" json:"youtube"`
 	Search             Search  `toml:"search" json:"search"`
+	Player             Player  `toml:"player" json:"player"`
 	Watch              Watch   `toml:"watch" json:"watch"`
 	Tools              Tools   `toml:"tools" json:"tools"`
 }
@@ -80,6 +84,17 @@ type Search struct {
 	Limit   int    `toml:"limit" json:"limit"`
 	Picker  string `toml:"picker" json:"picker"`
 	Confirm bool   `toml:"confirm" json:"confirm"`
+}
+
+// Player configures `geet play`, the terminal player.
+type Player struct {
+	Engine     string `toml:"engine" json:"engine"`
+	Visualizer bool   `toml:"visualizer" json:"visualizer"`
+	Lyrics     bool   `toml:"lyrics" json:"lyrics"`
+	Shuffle    bool   `toml:"shuffle" json:"shuffle"`
+	Repeat     bool   `toml:"repeat" json:"repeat"`
+	MPV        string `toml:"mpv" json:"mpv"`
+	FFplay     string `toml:"ffplay" json:"ffplay"`
 }
 
 // Watch configures `geet watch`, the clipboard daemon.
@@ -134,6 +149,7 @@ func Default() Config {
 		},
 		Spotify: Spotify{CacheDays: 30},
 		Search:  Search{Country: "US", Limit: 15, Picker: "auto", Confirm: true},
+		Player:  Player{Engine: "auto", Visualizer: true, Lyrics: true, MPV: "mpv", FFplay: "ffplay"},
 		Watch:   Watch{Interval: Duration{time.Second}, Notify: true},
 		Tools:   Tools{YtDlp: "yt-dlp", FFmpeg: "ffmpeg", FFprobe: "ffprobe", WlPaste: "wl-paste", NotifySend: "notify-send"},
 	}
@@ -279,6 +295,12 @@ func (c Config) Validate() error {
 	}
 	if !slices.Contains(pickers, c.Search.Picker) {
 		errs = append(errs, fmt.Errorf("search.picker %q must be one of %s", c.Search.Picker, strings.Join(pickers, ", ")))
+	}
+	if !slices.Contains(playerEngines, c.Player.Engine) {
+		errs = append(errs, fmt.Errorf("player.engine %q must be one of %s", c.Player.Engine, strings.Join(playerEngines, ", ")))
+	}
+	if c.Player.MPV == "" || c.Player.FFplay == "" {
+		errs = append(errs, errors.New("player.mpv and player.ffplay must not be empty"))
 	}
 	if c.Watch.Interval.Duration < 100*time.Millisecond || c.Watch.Interval.Duration > time.Minute {
 		errs = append(errs, fmt.Errorf("watch.interval must be between 100ms and 1m, got %s", c.Watch.Interval))

@@ -114,13 +114,19 @@ Linux is the target and macOS is best effort, where everything but `watch` (Wayl
   - Track bars are capped to the terminal's height minus `reservedRows` (`acquire`/`release`; extra tracks queue for a line). A bar's slot is freed only after `bar.Wait()` (its last draw, in `drop`): when a redraw has more rows than the terminal, mpb v8.16.1 undercounts the lines and leaves stale bars in the scrollback. `GEET_UI_DEMO=1` runs `TestUIDemo`; build it with `go test -c` (go test captures stderr), run it under `script` at several `stty rows`, and replay the output into pyte, since tmux's capture misreports this.
   - Never call into a `*mpb.Bar` while holding `barTrack.mu`: the render goroutine takes that lock in `status`.
   - To test the animation headlessly, the pty needs a size: `script -qefc "stty cols 150 rows 40; <cmd>" /dev/null`. With 0 rows mpb draws nothing.
+- `internal/player`, `internal/player/spectrum`, `internal/player/tui`, `internal/lyrics`, `cmd/geet/play.go`: `geet play`, the terminal player.
+  - **mpv through its JSON IPC socket** (`internal/player/mpv.go`), with ffplay as a fallback (play/stop only, position from a timer). Property events carry `id`, which is *not* a command's `request_id`; mixing them up silently stops the position updating. `mpv_test.go` drives a fake socket, so the protocol is tested without mpv or audio.
+  - **bubbletea owns the screen, so it must not own the signals**: `tea.WithoutSignalHandler()` is required, because geet's own `signal.NotifyContext` plus bubbletea's handler deadlocks its shutdown (its signal goroutine blocks sending to a closing program while `Run` waits for that goroutine).
+  - **The spectrum** is an ffmpeg PCM tap (`-re` and `-ss` are *input* options and must come before `-i`, or ffmpeg refuses to start) plus a hand-written radix-2 FFT. Automatic gain scales bands against the loudest band heard recently; `minPeak` comes from measurements in `tune_test.go` (real songs sit at 0.02–0.11). Each tap carries a generation number: without it, a stale "channel closed" from the tap a seek replaced freezes the bars.
+  - **Lyrics** come from LRCLIB (keyless), cached in `~/.cache/geet/lyrics`, misses included, so a song with no lyrics isn't looked up on every replay. No lyrics is an ordinary state: the pane says so and the spectrum takes the width.
+  - Tests that need a real song are skipped unless `GEET_TAP_FILE` points at one. Drive the screen with tmux (`tmux new-session -d -x 110 -y 26 "geet play …"`, `send-keys`, `capture-pane`): piped stdin is not a terminal, so keys never arrive.
 - `cmd/geet/watch.go`, `internal/clipboard`, `internal/notify`: `geet watch`.
   - Jobs (one per copied link) run one at a time on the main goroutine; the clipboard goroutine only queues them. It logs through `rep.ui`, so swap the display with `reporter.setUI` (under `rep.mu`), never by assigning `rep.ui`.
   - Every queued job gets exactly one `finished` event, even when dropped or interrupted. The plugin relies on that pairing.
   - `runDownload` returns an `outcome` and an error; only `download`/`search` turn those into exit codes (`reporter.exit`), since `watch` must survive a failed link.
   - `clipboard.capped` must not embed `bytes.Buffer`: its promoted `ReadFrom` lets `io.Copy` skip the size cap.
   - Omarchy's `SUPER + SHIFT + Y` is its YouTube webapp, so the documented keybind unbinds it first.
-- `cmd/geet`: the subcommands `download <url>` and `watch`. `watch` is a daemon that polls `wl-paste` (Wayland, not xclip) about once a second and sends a `notify-send` notification with the cover art. Flags: `--format --output --bitrate --jobs --resolve-jobs --json`.
+- `cmd/geet`: the subcommands `download <url>`, `play`, `search` and `watch`. `watch` is a daemon that polls `wl-paste` (Wayland, not xclip) about once a second and sends a `notify-send` notification with the cover art. Flags: `--format --output --bitrate --jobs --resolve-jobs --json`.
 
 ## Playlist pipeline (implemented in `internal/pipeline` and `cmd/geet/download.go`)
 

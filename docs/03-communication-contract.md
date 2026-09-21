@@ -82,6 +82,24 @@ as a stable API even before the plugin exists.
     notifications. A consumer that shows its own should pass
     `--watch-notify=false`.
 
+## Playing (`geet play … --json`)
+The player streams NDJSON too, so a front end can show what is playing
+without drawing the terminal screen:
+```json
+{"track":"Bartika Eam Rai — Najeek","stage":"playing","path":"/home/u/Music/Najeek - Bartika Eam Rai.opus",
+ "position_ms":42250,"duration_ms":312500,"index":3,"total":18}
+```
+| stage | when |
+|---|---|
+| `track` | a new song started; `path`, `index` and `total` say which |
+| `playing` / `paused` | the pause key was used |
+| `position` | about twice a second while playing |
+| `stopped` | the queue ended or the player was quit |
+
+`--json` never draws the player: the same queue, lyrics and events run with
+no display, which is what the Omarchy plugin consumes. Fields are additive
+here as everywhere.
+
 ## Configuration for consumers
 The plugin configures the engine without touching its internals:
 - Per-invocation: pass flags (`--output`, `--format`, …) or `GEET_*`
