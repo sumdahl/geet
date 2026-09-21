@@ -286,6 +286,8 @@ func (m *Model) stopSpectrum() {
 }
 
 // skip moves by delta tracks, stopping at the end unless repeating.
+// skip moves through the queue when a song ends. Running off the end stops
+// the player, which is what a queue finishing means.
 func (m *Model) skip(delta int) tea.Cmd {
 	next := m.idx + delta
 	if next >= len(m.items) {
@@ -300,6 +302,32 @@ func (m *Model) skip(delta int) tea.Cmd {
 		next = 0
 	}
 	return m.startTrack(next)
+}
+
+// jump is the listener pressing next or previous. Unlike a song ending, it
+// must never close the player: asking for a song that isn't there is not a
+// reason to quit, it is a reason to say so.
+func (m *Model) jump(delta int) tea.Cmd {
+	next := m.idx + delta
+	switch {
+	case next >= len(m.items):
+		if m.opts.Repeat {
+			return m.startTrack(0)
+		}
+		m.setNote(lastSongNote(len(m.items)))
+		return nil
+	case next < 0:
+		m.setNote("this is the first song")
+		return nil
+	}
+	return m.startTrack(next)
+}
+
+func lastSongNote(queued int) string {
+	if queued == 1 {
+		return "nothing else queued — play a playlist or the trending list for more"
+	}
+	return "that was the last song in the queue"
 }
 
 func (m *Model) emit(stage string, pos time.Duration) {
@@ -453,13 +481,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.seek(-seekBigger)
 
 	case "n", "down", "j":
-		return m, m.skip(1)
-	case "p", "up":
-		// Restart this track first, the way every music player does.
+		return m, m.jump(1)
+	case "p", "up", "b":
+		// Restart this song first, the way every music player does: press
+		// again within three seconds to go back.
 		if m.status.Position > 3*time.Second {
 			return m, m.restart()
 		}
-		return m, m.skip(-1)
+		return m, m.jump(-1)
 
 	case "d", "s":
 		return m, m.saveCurrent()

@@ -127,3 +127,45 @@ func TestViewTinyWindow(t *testing.T) {
 		}
 	}
 }
+
+// Pressing "next" on the last song must never close the player. It used to
+// call the same path a finished queue does, so a song played from the
+// Omarchy panel (a queue of one) quit — and the terminal it ran in closed.
+func TestNextOnLastSongKeepsPlaying(t *testing.T) {
+	m := testModel(t, "[00:10.00]hello\n", 15*time.Second)
+	if len(m.items) != 1 {
+		t.Fatalf("this test wants a single-song queue, got %d", len(m.items))
+	}
+	if cmd := m.jump(1); cmd != nil {
+		t.Error("next at the end of the queue should do nothing, not run a command")
+	}
+	if m.quitting {
+		t.Error("the player quit on next")
+	}
+	if !strings.Contains(m.note, "nothing else queued") {
+		t.Errorf("the listener was not told why nothing happened: %q", m.note)
+	}
+
+	m.note = ""
+	if cmd := m.jump(-1); cmd != nil {
+		t.Error("previous at the first song should do nothing")
+	}
+	if m.quitting {
+		t.Error("the player quit on previous")
+	}
+	if !strings.Contains(m.note, "first song") {
+		t.Errorf("note = %q", m.note)
+	}
+}
+
+// A queue that ends on its own does stop the player: that is what a
+// finished queue means.
+func TestQueueEndingStopsThePlayer(t *testing.T) {
+	m := testModel(t, "", 0)
+	if cmd := m.skip(1); cmd == nil {
+		t.Fatal("a finished queue should quit")
+	}
+	if !m.quitting {
+		t.Error("the player should be quitting after its last song ended")
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,7 +55,7 @@ func playCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 
 	target := strings.TrimSpace(strings.Join(positional, " "))
-	items, err := playQueue(ctx, c, cfg, target, stdout, stderr)
+	items, err := playQueue(ctx, c, cfg, positional, target, stdout, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "geet: %v\n", err)
 		return exitFatal
@@ -166,7 +167,7 @@ func playJSON(ctx context.Context, opts tui.Options, stdout, stderr io.Writer) i
 }
 
 // playQueue turns what the user typed into files to play.
-func playQueue(ctx context.Context, c *cli, cfg config.Config, target string, stdout, stderr io.Writer) ([]player.Item, error) {
+func playQueue(ctx context.Context, c *cli, cfg config.Config, positional []string, target string, stdout, stderr io.Writer) ([]player.Item, error) {
 	// Nothing typed: the whole library, newest first.
 	if target == "" {
 		return player.Scan(cfg.Output)
@@ -184,10 +185,11 @@ func playQueue(ctx context.Context, c *cli, cfg config.Config, target string, st
 		return []player.Item{{Path: path, Added: info.ModTime()}}, nil
 	}
 
-	// A link or a catalogue reference: play what is already downloaded, and
-	// download what isn't.
-	if isPlayableLink(target) {
-		return playLink(ctx, c, target, stdout, stderr)
+	// One or more links or catalogue references. Several make a queue, so
+	// a front end (the Omarchy panel) can hand over a whole chart and
+	// next/previous walk it.
+	if refs := playableRefs(positional); len(refs) > 0 {
+		return playRefs(ctx, c, refs, stdout, stderr)
 	}
 
 	// Words: the library first, since playing must not need the network.
@@ -205,6 +207,21 @@ func playQueue(ctx context.Context, c *cli, cfg config.Config, target string, st
 	return playSearch(ctx, c, target, stdout, stderr)
 }
 
+// playableRefs returns the arguments when every one of them is a link or a
+// catalogue reference. Mixed input ("play the beatles") is a search, not a
+// queue.
+func playableRefs(args []string) []string {
+	if len(args) == 0 {
+		return nil
+	}
+	for _, a := range args {
+		if !isPlayableLink(a) {
+			return nil
+		}
+	}
+	return args
+}
+
 func isPlayableLink(s string) bool {
 	if itunes.IsRef(s) || deezer.IsRef(s) {
 		return true
@@ -215,16 +232,33 @@ func isPlayableLink(s string) bool {
 
 // playLink reads a link's tracks and queues them: whatever is downloaded
 // plays from the library, the rest streams.
-func playLink(ctx context.Context, c *cli, link string, stdout, stderr io.Writer) ([]player.Item, error) {
+func playRefs(ctx context.Context, c *cli, refs []string, stdout, stderr io.Writer) ([]player.Item, error) {
 	rep, cfg, err := prepare(c, stdout, stderr)
 	if err != nil {
 		return nil, err
 	}
 	setupLogging(stderr, c.verbose)
 
-	col, _, err := readLink(ctx, cfg, rep, link)
-	if err != nil {
-		return nil, err
+	var col spotify.Collection
+	for i, ref := range refs {
+		one, _, err := readLink(ctx, cfg, rep, ref)
+		if err != nil {
+			// One bad reference in a queue of twenty is not a reason to
+			// play nothing.
+			if len(refs) == 1 {
+				return nil, err
+			}
+			slog.WarnContext(ctx, "skipping a song that couldn't be read", "ref", ref, "err", err)
+			continue
+		}
+		if i == 0 {
+			col = one
+		} else {
+			col.Tracks = append(col.Tracks, one.Tracks...)
+		}
+	}
+	if len(col.Tracks) == 0 {
+		return nil, fmt.Errorf("none of those songs could be read")
 	}
 	if !cfg.Player.Stream {
 		// Download-first, the old behaviour, for anyone who wants the

@@ -7,6 +7,18 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Fixed
+- Pressing **n** on the last song no longer quits the player. A song played
+  from the Omarchy panel is a queue of one, so "next" closed the player —
+  and the terminal it was running in. Next and previous now say when there
+  is nothing on that side of the queue, and only a queue that finishes on
+  its own stops the player.
+
+### Added
+- `geet play` takes several songs (`geet play deezer:123 itunes:456`), so a
+  front end can hand over a whole queue. The Omarchy panel now plays the
+  trending list from the song you clicked onwards, and next walks the chart.
+
 ### Added
 - `geet trending` — what people are playing now. Deezer's chart (localised
   by where you are, so Nepali songs appear alongside the global hits),

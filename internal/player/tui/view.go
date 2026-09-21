@@ -312,9 +312,9 @@ func (m *Model) footer(width int) string {
 	if len(m.items) > 1 {
 		left = fmt.Sprintf("%d of %d", m.idx+1, len(m.items))
 	}
-	keys := []string{"space pause", "←/→ seek", "n next", "q quit"}
+	keys := []string{"space pause", "←/→ seek", "n/p song", "q quit"}
 	if !m.items[m.idx].Downloaded() && !m.items[m.idx].Saving {
-		keys = []string{"space pause", "←/→ seek", "d keep", "n next", "q quit"}
+		keys = []string{"space pause", "←/→ seek", "d keep", "n/p song", "q quit"}
 	}
 	if width < 60 {
 		keys = []string{"space", "←/→", "n", "q"}
