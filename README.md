@@ -346,6 +346,7 @@ geet play                          # your whole library, newest first
 geet play bartika najeek           # whatever in your library matches those words
 geet play <spotify-url>            # a song, album or playlist — starts in seconds
 geet play ~/Music/90s-mix          # a folder
+geet play deezer:123 itunes:456    # several songs, played in order
 ```
 
 **Nothing is downloaded to listen.** A song you already have plays from the
@@ -374,7 +375,7 @@ audio itself, and lyrics that follow the beat:
 |---|---|
 | `space` | pause and resume |
 | `←` `→` | back or forward 5 seconds (`shift` for 30) |
-| `n` `p` | next song, or previous (`p` restarts the song first) |
+| `n` `p` | next song, or previous (`p` restarts the song first). At the ends of the queue geet says so rather than quitting |
 | `d` | keep the streaming song: download it, tagged, without interrupting playback |
 | `v` `y` | show or hide the spectrum, the lyrics |
 | `q` | quit |
