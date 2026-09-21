@@ -7,43 +7,47 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-21
+
+geet plays music now, as well as downloading it.
+
+### Added
+- **`geet play`** — a player in the terminal: the song, its progress, a
+  spectrum drawn from an FFT of the audio, and synced lyrics from LRCLIB
+  that follow the beat. A song without lyrics says so and gives the space
+  back to the spectrum; lyrics without timings are shown and marked. Keys:
+  space, ←/→ (shift for 30s), n/p, d, v, y, q.
+- **Nothing is downloaded to listen.** A song in your library plays from
+  disk; anything else streams from the same YouTube match a download would
+  use, so it starts in a couple of seconds. **`d` keeps it**: a tagged copy
+  downloads in the background while the music carries on. The next song in
+  a queue is found while the current one plays, so there is no gap.
+  `player.stream = false` restores downloading first.
+- **`geet trending`** — what people are playing now: Deezer's chart
+  (localised, so local songs appear beside the global hits), topped up from
+  Apple's most-played feed for your store. Pick one and it plays; `--pick`
+  downloads; `--json` gives a front end the same rows as `geet search`,
+  plus a rank. Cached for `trending.cache_for` (6h), and a failed read
+  falls back to the last chart rather than showing nothing.
+- `geet play` takes several songs (`geet play deezer:123 itunes:456`), so a
+  front end can hand over a whole queue.
+- `geet play --json` streams playback (`track`, `playing`, `paused`,
+  `position`, `stopped`) with no screen, for the Omarchy plugin.
+- New settings: `player.engine`, `player.stream`, `player.visualizer`,
+  `player.lyrics`, `player.shuffle`, `player.repeat`, `player.mpv`,
+  `player.ffplay`, `trending.source`, `trending.cache_for`.
+- Playback uses mpv through its IPC socket, which is what makes the
+  position exact enough for lyrics; ffplay (part of ffmpeg) is the
+  fallback.
+
 ### Fixed
 - Pressing **n** on the last song no longer quits the player. A song played
   from the Omarchy panel is a queue of one, so "next" closed the player —
-  and the terminal it was running in. Next and previous now say when there
-  is nothing on that side of the queue, and only a queue that finishes on
-  its own stops the player.
-
-### Added
-- `geet play` takes several songs (`geet play deezer:123 itunes:456`), so a
-  front end can hand over a whole queue. The Omarchy panel now plays the
-  trending list from the song you clicked onwards, and next walks the chart.
-
-### Added
-- `geet trending` — what people are playing now. Deezer's chart (localised
-  by where you are, so Nepali songs appear alongside the global hits),
-  topped up from Apple's most-played feed for your store country. Pick one
-  and it plays; `--pick` downloads instead; `--json` gives a front end the
-  same rows `geet search` does, plus a rank. Charts are cached for
-  `trending.cache_for` (6h), and a failed read falls back to the last
-  chart rather than showing nothing.
-
-### Added
-- `geet play` now plays without downloading first. A song in your library
-  plays from disk; anything else streams from the same YouTube match a
-  download would use, so it starts in a couple of seconds. **`d` keeps the
-  song**: it downloads a tagged copy in the background while the music
-  carries on. The next song in a queue is found while the current one
-  plays, so there is no gap. `player.stream = false` restores the old
-  download-first behaviour.
-
-### Fixed
-- Nepali (and other Indic) lyrics no longer overlap the spectrum in the
-  player. Terminals draw Devanagari clusters at widths Unicode doesn't
-  predict — "सम्झनामा" is 15 clusters, 19 columns and 24 runes — so those
-  lyrics now get the full width with the spectrum above them, are measured
-  at their worst case, and are only ever cut between clusters, never inside
-  one. Latin lyrics keep the side-by-side layout.
+  and the terminal it was running in.
+- Nepali (and other Indic) lyrics no longer overlap the spectrum.
+  Terminals draw Devanagari clusters at widths Unicode doesn't predict, so
+  those lyrics now take the full width with the spectrum above them, are
+  measured at their worst case, and are cut only between clusters.
 
 ## [0.5.0] - 2026-09-21
 
@@ -356,7 +360,8 @@ First release.
   YouTube. Ctrl+C leaves no partial files, and re-running resumes.
 - `geet version` shows the release, commit and date.
 
-[Unreleased]: https://github.com/sumdahl/geet/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/sumdahl/geet/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/sumdahl/geet/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/sumdahl/geet/compare/v0.4.6...v0.5.0
 [0.4.6]: https://github.com/sumdahl/geet/compare/v0.4.5...v0.4.6
 [0.4.5]: https://github.com/sumdahl/geet/compare/v0.4.4...v0.4.5
