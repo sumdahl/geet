@@ -1,9 +1,10 @@
 # geet
 
-*geet* (गीत in Devanagari) means "song". It downloads Spotify tracks, albums and playlists as tagged audio files.
+*geet* (गीत in Devanagari) means "song". It plays music, and keeps the songs you want as tagged audio files.
 
-`geet` reads a link's metadata from Spotify, finds the matching upload on YouTube, downloads it with `yt-dlp`, and uses `ffmpeg` to convert it, tag it and embed the album cover. A 50-track playlist takes about a minute.
+`geet` reads a link's metadata from Spotify, finds the matching upload on YouTube, and either plays it straight away or downloads it with `yt-dlp` and uses `ffmpeg` to convert it, tag it and embed the album cover. A song starts playing in a couple of seconds; a 50-track playlist downloads in about a minute.
 
+- **Listen first, keep what you like.** `geet play` starts a song in seconds without downloading it, with a spectrum drawn from the audio and lyrics that follow the beat. One key saves a proper tagged copy, without interrupting the music.
 - **No Spotify account or API keys needed.** Metadata comes from Spotify's public pages. The official Web API (which needs Premium) is used only if you configure credentials.
 - **Careful matching.** It avoids live versions, covers, remixes and sped-up uploads, and videos with long intros. It handles censored titles (`Ni**as`), accented names (`JAŸ-Z`) and non-Latin scripts.
 - **Proper files.** Title, artists, album, album artist, track and disc number, year, ISRC and the 640 px cover are written into the file itself.
@@ -20,6 +21,20 @@ playlist "Daily Mix 1": 50 track(s) → /home/you/Music/daily-mix-1
 [ 7/50] Eminem - Sing For The Moment               ━━━━━━━━━━━━──────────── ⠼ downloading  54%  1.1 MiB / 2.0 MiB
 [ 8/50] Kendrick Lamar - The Art of Peer Pressure  ━━━━━━━━━━━━━━━━━━━━━━━━ ⠦ tagging & cover art
 [ 9/50] Drake - Plot Twist                         ──────────────────────── · queued for download
+```
+
+```
+$ geet play "https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b"
+
+  Blinding Lights                                              ▶  0:34 / 3:23
+  The Weeknd  ·  After Hours  ·  streaming · d to keep
+  ━━━━━━━━━━━━━────────────────────────────────────────────────────────────
+
+        ▃▃       ██                         I'm goin' through withdrawals
+        ██ ▆▆    ██                       ▸ You don't even have to do too much
+     ▃▃ ██ ██ ▄▄ ██ ▂▂                      You can turn me on with just a touch
+
+  1 of 1                 space pause  ·  ←/→ seek  ·  d keep  ·  q quit
 ```
 
 ## Requirements
