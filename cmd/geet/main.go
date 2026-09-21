@@ -52,6 +52,8 @@ commands:
   search <words…>          find a song by name, pick it from a menu, download it
   play [words… | link]     play your library, or a song you name, with a
                            spectrum and synced lyrics (no argument: everything)
+  trending                 what people are playing now: pick one to listen,
+                           or --pick to download
   watch                    download each Spotify link you copy, until stopped
   doctor                   check tools, setup and services, and how to fix problems
   config                   show the effective configuration
@@ -84,6 +86,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return searchCmd(ctx, args[1:], stdout, stderr)
 	case "play":
 		return playCmd(ctx, args[1:], stdout, stderr)
+	case "trending":
+		return trendingCmd(ctx, args[1:], stdout, stderr)
 	case "doctor":
 		return doctorCmd(ctx, args[1:], stdout, stderr)
 	case "config":

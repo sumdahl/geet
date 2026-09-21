@@ -128,6 +128,7 @@ Releases follow [Semantic Versioning](https://semver.org/), and the changes are 
 geet download <spotify-url>        # a track, album or playlist
 geet search <words…>               # find a song by name, pick it, download it
 geet play [words… | link]          # play your library (or a song), with a spectrum and lyrics
+geet trending                      # what people are playing now: pick one and listen
 geet doctor                        # health check: tools, setup, services, and how to fix problems
 geet config                        # effective configuration (TOML; --json for JSON)
 geet config path                   # where the config file lives
@@ -390,6 +391,26 @@ audio itself, and lyrics that follow the beat:
   shows your now-playing (the Omarchy bar, playerctl) sees geet too.
 - `geet play --json` plays with no screen and streams what it is doing, for
   the Omarchy plugin.
+
+### What's trending (`geet trending`)
+
+```sh
+geet trending                      # pick one from the menu and it plays
+geet trending --json               # the same list, for a front end
+geet trending --play 1,2           # listen to the top two, no menu
+geet trending --pick 3             # download the third
+geet trending --limit 50 --refresh # a longer list, read again
+```
+
+- Songs come from **Deezer's chart**, which is localised by where you are —
+  from Nepal that mixes Nepali songs in with the global hits — topped up
+  from **Apple's most-played feed** for your `search.country` store. Set
+  `trending.source` to `deezer` or `apple` to use just one.
+- The list is cached for `trending.cache_for` (6 hours by default), so
+  opening it again is instant. `--refresh` reads it anew, and if the
+  network fails geet shows the last chart it has rather than nothing.
+- Picking a song **plays it straight away** (streamed, as everywhere else);
+  `d` while it plays keeps it.
 
 ## Configuration
 

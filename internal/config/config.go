@@ -31,30 +31,35 @@ var (
 	// playerEngines are what player.engine accepts: auto prefers mpv, which
 	// can seek and report an exact position; ffplay only plays.
 	playerEngines = []string{"auto", "mpv", "ffplay"}
-	countryCode   = regexp.MustCompile(`^[A-Za-z]{2}$`)
-	bitrate       = regexp.MustCompile(`^[1-9][0-9]*k$`)
+	// trendingSources are what trending.source accepts: auto reads Deezer
+	// (localised by where the request comes from) and tops it up from
+	// Apple's per-country feed.
+	trendingSources = []string{"auto", "deezer", "apple"}
+	countryCode     = regexp.MustCompile(`^[A-Za-z]{2}$`)
+	bitrate         = regexp.MustCompile(`^[1-9][0-9]*k$`)
 )
 
 type Config struct {
-	Output             string  `toml:"output" json:"output"`
-	OutputTemplate     string  `toml:"output_template" json:"output_template"`
-	PlaylistFolder     bool    `toml:"playlist_folder" json:"playlist_folder"`
-	PlaylistFolderCase string  `toml:"playlist_folder_case" json:"playlist_folder_case"`
-	Format             string  `toml:"format" json:"format"`
-	Bitrate            string  `toml:"bitrate" json:"bitrate"`
-	Overwrite          bool    `toml:"overwrite" json:"overwrite"`
-	Duplicates         string  `toml:"duplicates" json:"duplicates"`
-	IndexPath          string  `toml:"index_path" json:"index_path"`
-	Progress           string  `toml:"progress" json:"progress"`
-	DownloadRetries    int     `toml:"download_retries" json:"download_retries"`
-	Jobs               int     `toml:"jobs" json:"jobs"`
-	ResolveJobs        int     `toml:"resolve_jobs" json:"resolve_jobs"`
-	Spotify            Spotify `toml:"spotify" json:"spotify"`
-	YouTube            YouTube `toml:"youtube" json:"youtube"`
-	Search             Search  `toml:"search" json:"search"`
-	Player             Player  `toml:"player" json:"player"`
-	Watch              Watch   `toml:"watch" json:"watch"`
-	Tools              Tools   `toml:"tools" json:"tools"`
+	Output             string   `toml:"output" json:"output"`
+	OutputTemplate     string   `toml:"output_template" json:"output_template"`
+	PlaylistFolder     bool     `toml:"playlist_folder" json:"playlist_folder"`
+	PlaylistFolderCase string   `toml:"playlist_folder_case" json:"playlist_folder_case"`
+	Format             string   `toml:"format" json:"format"`
+	Bitrate            string   `toml:"bitrate" json:"bitrate"`
+	Overwrite          bool     `toml:"overwrite" json:"overwrite"`
+	Duplicates         string   `toml:"duplicates" json:"duplicates"`
+	IndexPath          string   `toml:"index_path" json:"index_path"`
+	Progress           string   `toml:"progress" json:"progress"`
+	DownloadRetries    int      `toml:"download_retries" json:"download_retries"`
+	Jobs               int      `toml:"jobs" json:"jobs"`
+	ResolveJobs        int      `toml:"resolve_jobs" json:"resolve_jobs"`
+	Spotify            Spotify  `toml:"spotify" json:"spotify"`
+	YouTube            YouTube  `toml:"youtube" json:"youtube"`
+	Search             Search   `toml:"search" json:"search"`
+	Player             Player   `toml:"player" json:"player"`
+	Trending           Trending `toml:"trending" json:"trending"`
+	Watch              Watch    `toml:"watch" json:"watch"`
+	Tools              Tools    `toml:"tools" json:"tools"`
 }
 
 // Spotify credentials are optional: with none, metadata comes from Spotify's
@@ -96,6 +101,13 @@ type Player struct {
 	Repeat     bool   `toml:"repeat" json:"repeat"`
 	MPV        string `toml:"mpv" json:"mpv"`
 	FFplay     string `toml:"ffplay" json:"ffplay"`
+}
+
+// Trending configures `geet trending`, the chart of what people are
+// playing now.
+type Trending struct {
+	Source   string   `toml:"source" json:"source"`
+	CacheFor Duration `toml:"cache_for" json:"cache_for"`
 }
 
 // Watch configures `geet watch`, the clipboard daemon.
@@ -148,11 +160,12 @@ func Default() Config {
 			MusicFallback:   true,
 			TitleFallback:   true,
 		},
-		Spotify: Spotify{CacheDays: 30},
-		Search:  Search{Country: "US", Limit: 15, Picker: "auto", Confirm: true},
-		Player:  Player{Engine: "auto", Stream: true, Visualizer: true, Lyrics: true, MPV: "mpv", FFplay: "ffplay"},
-		Watch:   Watch{Interval: Duration{time.Second}, Notify: true},
-		Tools:   Tools{YtDlp: "yt-dlp", FFmpeg: "ffmpeg", FFprobe: "ffprobe", WlPaste: "wl-paste", NotifySend: "notify-send"},
+		Spotify:  Spotify{CacheDays: 30},
+		Search:   Search{Country: "US", Limit: 15, Picker: "auto", Confirm: true},
+		Player:   Player{Engine: "auto", Stream: true, Visualizer: true, Lyrics: true, MPV: "mpv", FFplay: "ffplay"},
+		Trending: Trending{Source: "auto", CacheFor: Duration{6 * time.Hour}},
+		Watch:    Watch{Interval: Duration{time.Second}, Notify: true},
+		Tools:    Tools{YtDlp: "yt-dlp", FFmpeg: "ffmpeg", FFprobe: "ffprobe", WlPaste: "wl-paste", NotifySend: "notify-send"},
 	}
 }
 
@@ -302,6 +315,12 @@ func (c Config) Validate() error {
 	}
 	if c.Player.MPV == "" || c.Player.FFplay == "" {
 		errs = append(errs, errors.New("player.mpv and player.ffplay must not be empty"))
+	}
+	if !slices.Contains(trendingSources, c.Trending.Source) {
+		errs = append(errs, fmt.Errorf("trending.source %q must be one of %s", c.Trending.Source, strings.Join(trendingSources, ", ")))
+	}
+	if c.Trending.CacheFor.Duration < time.Minute || c.Trending.CacheFor.Duration > 7*24*time.Hour {
+		errs = append(errs, fmt.Errorf("trending.cache_for must be between 1m and 168h, got %s", c.Trending.CacheFor))
 	}
 	if c.Watch.Interval.Duration < 100*time.Millisecond || c.Watch.Interval.Duration > time.Minute {
 		errs = append(errs, fmt.Errorf("watch.interval must be between 100ms and 1m, got %s", c.Watch.Interval))
