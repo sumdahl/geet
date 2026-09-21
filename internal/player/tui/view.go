@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mattn/go-runewidth"
 
 	"github.com/sumdahl/geet/internal/player/spectrum"
 )
@@ -85,14 +84,14 @@ func (m *Model) bodyHeight() int {
 func (m *Model) header(width int) string {
 	it := m.items[m.idx]
 	right := m.timeLabel()
-	title := runewidth.Truncate(it.Track.Title, max(1, width-runewidth.StringWidth(right)-2), "…")
+	title := Truncate(it.Track.Title, max(1, width-Width(right)-2), "…")
 	if it.Track.Title == "" {
-		title = runewidth.Truncate(it.Name(), max(1, width-runewidth.StringWidth(right)-2), "…")
+		title = Truncate(it.Name(), max(1, width-Width(right)-2), "…")
 	}
 
 	line1 := lipgloss.JoinHorizontal(lipgloss.Top,
 		titleSt.Render(title),
-		strings.Repeat(" ", max(1, width-runewidth.StringWidth(title)-runewidth.StringWidth(right))),
+		strings.Repeat(" ", max(1, width-Width(title)-Width(right))),
 		accentSt.Render(right),
 	)
 
@@ -106,7 +105,7 @@ func (m *Model) header(width int) string {
 	if sub == "" {
 		sub = shortPath(it.Path)
 	}
-	return line1 + "\n" + subSt.Render(runewidth.Truncate(sub, width, "…"))
+	return line1 + "\n" + subSt.Render(Truncate(sub, width, "…"))
 }
 
 // timeLabel is the state and the clock: "▶  1:42 / 5:12".
@@ -137,7 +136,7 @@ func (m *Model) noteLine(width int) string {
 	if m.note == "" || time.Since(m.noteAt) > noteLifetime {
 		return ""
 	}
-	return noteSt.Render(runewidth.Truncate(m.note, width, "…"))
+	return noteSt.Render(Truncate(m.note, width, "…"))
 }
 
 // body lays out the spectrum and the lyrics. Either can have the whole
@@ -152,6 +151,17 @@ func (m *Model) body(width, height int) string {
 	wantLyr := m.showLyr && m.lyrState != lyricsIdle
 
 	switch {
+	case wantVis && wantLyr && m.lyricsAreComplex() && height >= 7:
+		// Devanagari and its relatives cannot be trusted to stay inside a
+		// fixed-width column (see width.go), so they get the full width and
+		// the spectrum moves above them. Overlapping text is unreadable;
+		// a shorter spectrum is not.
+		visH := height / 3
+		if visH < 2 {
+			visH = 2
+		}
+		return m.visualizer(width, visH) + "\n\n" + m.lyricsPane(width, height-visH-1)
+
 	case wantVis && wantLyr && width >= minVisWidth+minLyrWidth+4:
 		visW := width/2 - 2
 		lyrW := width - visW - 4
@@ -171,6 +181,25 @@ func (m *Model) body(width, height int) string {
 		return m.lyricsPane(width, height)
 	}
 	return ""
+}
+
+// lyricsAreComplex reports whether the words on screen belong to a script
+// whose width a terminal may render differently from Unicode's count.
+func (m *Model) lyricsAreComplex() bool {
+	if m.lyrState != lyricsReady {
+		return false
+	}
+	// A handful of lines is enough to tell, and it avoids walking a long
+	// song's lyrics on every frame.
+	for i, line := range m.lyr.Lines {
+		if i == 8 {
+			break
+		}
+		if IsComplexScript(line.Text) {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Model) visualizer(width, height int) string {
@@ -195,7 +224,7 @@ func (m *Model) lyricsPane(width, height int) string {
 	case lyricsNone:
 		return subSt.Render("no lyrics for this one")
 	case lyricsFailed:
-		return subSt.Render("lyrics unavailable  ·  " + runewidth.Truncate(m.lyrErr, max(10, width-24), "…"))
+		return subSt.Render("lyrics unavailable  ·  " + Truncate(m.lyrErr, max(10, width-24), "…"))
 	case lyricsReady:
 	default:
 		return ""
@@ -225,8 +254,15 @@ func (m *Model) lyricsPane(width, height int) string {
 		out = append(out, subSt.Render("lyrics · no timings for this one"), "")
 		height -= 2
 	}
+	// The marker takes two columns, and a complex script needs room for a
+	// terminal that draws wider than Unicode says. cur is -1 until the
+	// first line is due, so it is no use for sampling the script.
+	room := width - 2
+	if m.lyricsAreComplex() {
+		room = width - 6
+	}
 	for i := start; i < start+height && i < len(m.lyr.Lines); i++ {
-		text := runewidth.Truncate(m.lyr.Lines[i].Text, width-2, "…")
+		text := Truncate(m.lyr.Lines[i].Text, max(4, room), "…")
 		if text == "" {
 			out = append(out, "")
 			continue
@@ -258,7 +294,7 @@ func (m *Model) footer(width int) string {
 		keys = []string{"space", "←/→", "n", "q"}
 	}
 	right := strings.Join(keys, "  ·  ")
-	gap := max(1, width-runewidth.StringWidth(left)-runewidth.StringWidth(right))
+	gap := max(1, width-Width(left)-Width(right))
 	return subSt.Render(left + strings.Repeat(" ", gap) + right)
 }
 

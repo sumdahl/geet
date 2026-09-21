@@ -7,6 +7,14 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Fixed
+- Nepali (and other Indic) lyrics no longer overlap the spectrum in the
+  player. Terminals draw Devanagari clusters at widths Unicode doesn't
+  predict — "सम्झनामा" is 15 clusters, 19 columns and 24 runes — so those
+  lyrics now get the full width with the spectrum above them, are measured
+  at their worst case, and are only ever cut between clusters, never inside
+  one. Latin lyrics keep the side-by-side layout.
+
 ## [0.5.0] - 2026-09-21
 
 ### Added
