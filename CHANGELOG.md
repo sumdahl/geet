@@ -7,6 +7,8 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-21
+
 ### Added
 - `geet play` — geet is a player as well as a downloader. With no argument it
   plays your library, newest first; given words it plays what matches (and
@@ -316,7 +318,8 @@ First release.
   YouTube. Ctrl+C leaves no partial files, and re-running resumes.
 - `geet version` shows the release, commit and date.
 
-[Unreleased]: https://github.com/sumdahl/geet/compare/v0.4.6...HEAD
+[Unreleased]: https://github.com/sumdahl/geet/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/sumdahl/geet/compare/v0.4.6...v0.5.0
 [0.4.6]: https://github.com/sumdahl/geet/compare/v0.4.5...v0.4.6
 [0.4.5]: https://github.com/sumdahl/geet/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/sumdahl/geet/compare/v0.4.3...v0.4.4
