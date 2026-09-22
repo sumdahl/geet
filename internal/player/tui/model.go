@@ -483,10 +483,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case errors.Is(msg.err, lyrics.ErrNotFound):
 			m.lyrState = lyricsNone
+			// A front end is told there are none, rather than left
+			// waiting: plenty of songs have no words anywhere.
+			m.emitLyrics(lyrics.Lyrics{})
 		case msg.err != nil:
 			m.lyrState, m.lyrErr = lyricsFailed, msg.err.Error()
 		case msg.lyr.Empty():
 			m.lyrState = lyricsNone
+			m.emitLyrics(lyrics.Lyrics{})
 		default:
 			m.lyrState, m.lyr = lyricsReady, msg.lyr
 			m.emitLyrics(msg.lyr)

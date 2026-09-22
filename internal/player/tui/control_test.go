@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sumdahl/geet/internal/lyrics"
 	"github.com/sumdahl/geet/internal/player"
 )
 
@@ -67,6 +68,25 @@ func TestControlsDriveTheEngine(t *testing.T) {
 	m.handleControl(Control{Action: "next"})
 	if m.idx != 1 {
 		t.Fatalf("next left the player on track %d", m.idx)
+	}
+}
+
+// A song nobody has written down must be reported, not left pending: the
+// panel says "no words for this one" instead of "looking…" forever.
+func TestMissingLyricsAreReported(t *testing.T) {
+	t.Parallel()
+	var got []Event
+	m := New(context.Background(), Options{
+		Items:   []player.Item{{Path: "/music/a.opus"}},
+		Engine:  &fakeEngine{playing: true},
+		OnEvent: func(ev Event) { got = append(got, ev) },
+	})
+	m.Update(lyricsMsg{idx: 0, err: lyrics.ErrNotFound})
+	if len(got) != 1 || got[0].Stage != "lyrics" {
+		t.Fatalf("events = %+v, want one lyrics event", got)
+	}
+	if got[0].Lyrics == nil || len(got[0].Lyrics.Lines) != 0 {
+		t.Fatalf("lyrics = %+v, want an empty set", got[0].Lyrics)
 	}
 }
 
