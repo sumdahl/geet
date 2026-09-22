@@ -21,6 +21,14 @@ still change the CLI, the configuration or the `--json` output.
   what a dragged progress bar asks for. ffplay still cannot seek.
 
 ### Fixed
+- **The player no longer pretends to be your music player.** mpv is started
+  with `--load-scripts=no`, so the system-wide `mpv-mpris` script cannot
+  publish geet's internal mpv on MPRIS with the raw stream URL as its title.
+  It was capturing every lyrics widget and media applet on the desktop, all
+  of which pick whichever player says it is playing.
+- mpv is no longer left running when geet is killed rather than closed (a
+  shell restart, SIGKILL): on Linux it is asked to die with its parent. A
+  leftover `--idle` mpv went on playing with nothing to control it.
 - `geet play --json` numbered a queue of streaming songs wrong (they share
   an empty path) and reported a Spotify link with no id for songs read off
   disk.

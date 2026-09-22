@@ -63,9 +63,23 @@ func newMPV(ctx context.Context, bin string) (*mpvEngine, error) {
 		// Keep the file open at the end rather than quitting, so the
 		// queue, not mpv, decides what happens next.
 		"--keep-open=yes",
+		// No user scripts. This mpv is geet's own machinery, driven over
+		// the socket below, and a script that reaches outside it speaks for
+		// geet without geet knowing. mpv-mpris is the one that bites: it is
+		// installed system-wide on Arch, and it would publish this mpv on
+		// MPRIS as a player whose title is the raw stream URL — enough to
+		// capture every lyrics widget and media applet on the desktop.
+		// Announcing geet properly is its own feature
+		// (docs/05-future-v2-playerctl.md), not an accident of the audio
+		// backend.
+		"--load-scripts=no",
 		"--input-ipc-server="+sock,
 	)
 	cmd.Stdout, cmd.Stderr = nil, nil
+	// mpv must not outlive geet. It is started with --idle, so a geet that
+	// is killed rather than closed (a shell restart, SIGKILL) would leave a
+	// silent mpv holding an MPRIS name forever.
+	dieWithParent(cmd)
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
