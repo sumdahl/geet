@@ -29,6 +29,10 @@ still change the CLI, the configuration or the `--json` output.
 - mpv is no longer left running when geet is killed rather than closed (a
   shell restart, SIGKILL): on Linux it is asked to die with its parent. A
   leftover `--idle` mpv went on playing with nothing to control it.
+- **`geet trending --limit` was ignored for six hours after the first run.**
+  A cached chart was served whatever its length, so asking for fifty songs
+  kept returning the twenty already on disk — from a front end with a
+  "how many to show" setting, the setting looked like it did nothing.
 - `geet play --json` numbered a queue of streaming songs wrong (they share
   an empty path) and reported a Spotify link with no id for songs read off
   disk.

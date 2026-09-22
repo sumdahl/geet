@@ -68,6 +68,30 @@ func TestTrendingCacheRoundTrip(t *testing.T) {
 	}
 }
 
+// Asking for more songs than the cache holds must go back to the sources:
+// a panel whose "show 50" setting was ignored for six hours looked broken.
+func TestTrendingCacheTooShortForTheRequest(t *testing.T) {
+	twenty := make([]spotify.Track, 20)
+	for i := range twenty {
+		twenty[i] = track("Song", "Someone")
+	}
+	doc := trendingDoc{Limit: 20, Tracks: twenty}
+	if !doc.enoughFor(20) {
+		t.Error("a chart of twenty cannot answer a request for twenty")
+	}
+	if doc.enoughFor(50) {
+		t.Error("a chart of twenty answered a request for fifty")
+	}
+	// The sources had nothing more to give, so this one stands.
+	if !(trendingDoc{Limit: 50, Tracks: twenty}).enoughFor(50) {
+		t.Error("a chart fetched for fifty must not be refetched on every open")
+	}
+	// Written before Limit existed: judged by length.
+	if !(trendingDoc{Tracks: twenty}).enoughFor(10) {
+		t.Error("an old cache with enough songs was rejected")
+	}
+}
+
 func TestTrendingCacheExpires(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "trending.json")
 	writeTrendingCache(path, trendingDoc{
