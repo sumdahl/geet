@@ -32,6 +32,10 @@ type Engine interface {
 	// Seek moves by delta (negative rewinds). Engines that cannot seek
 	// return ErrNotSeekable.
 	Seek(delta time.Duration) error
+	// SeekTo moves to an exact position, which is what a front end with a
+	// progress bar points at. Engines that cannot seek return
+	// ErrNotSeekable.
+	SeekTo(pos time.Duration) error
 	// Status is a snapshot; it never blocks on the player process.
 	Status() Status
 	// Close stops playback and reaps the process.

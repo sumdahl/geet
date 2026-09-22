@@ -17,6 +17,7 @@ type stillEngine struct{ status player.Status }
 func (e *stillEngine) Play(context.Context, string) error { return nil }
 func (e *stillEngine) TogglePause() (bool, error)         { return true, nil }
 func (e *stillEngine) Seek(time.Duration) error           { return nil }
+func (e *stillEngine) SeekTo(time.Duration) error         { return nil }
 func (e *stillEngine) Status() player.Status              { return e.status }
 func (e *stillEngine) Close() error                       { return nil }
 

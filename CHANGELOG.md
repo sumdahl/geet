@@ -7,6 +7,24 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Added
+- **`geet play --json` is a full player a front end can drive.** It reads
+  commands on stdin (`toggle`, `play`, `pause`, `next`, `prev`, `seek <ms>`,
+  `seekto <ms>`, `save`, `visualizer`, `lyrics`, `stop`) and reports
+  everything a display needs: the spectrum (`levels`, about twenty frames a
+  second), the song's lyrics with their timings (`lyrics`), the player's own
+  notes (`note`), a `saved` stage, and the song's title, artist, album,
+  cover and ref on every event. Every command but `seekto` runs the terminal
+  player's own key handler, so the two cannot drift apart. This is what lets
+  the Omarchy panel play a song in the panel instead of opening a terminal.
+- `SeekTo` on the player engine: mpv seeks to an absolute position, which is
+  what a dragged progress bar asks for. ffplay still cannot seek.
+
+### Fixed
+- `geet play --json` numbered a queue of streaming songs wrong (they share
+  an empty path) and reported a Spotify link with no id for songs read off
+  disk.
+
 ## [0.6.0] - 2026-09-21
 
 geet plays music now, as well as downloading it.

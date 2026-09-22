@@ -36,12 +36,28 @@ type Options struct {
 	OnEvent func(Event)
 }
 
-// Event is a playback change worth telling a consumer about.
+// Event is a playback change worth telling a consumer about. A front end
+// with no screen of its own (the Omarchy panel) draws from these alone, so
+// the decoration the TUI paints itself — the spectrum, the lyrics, the
+// transient note — is reported here too.
 type Event struct {
-	Stage    string // track, playing, paused, position, stopped
+	Stage    string // track, playing, paused, position, stopped, levels, lyrics, note, saved
 	Item     player.Item
 	Position time.Duration
 	Duration time.Duration
+	Index    int // 1-based place in the queue
+	Total    int
+	Levels   []float64      // stage "levels": one value per spectrum band, 0..1
+	Lyrics   *lyrics.Lyrics // stage "lyrics": the whole song's words, once
+	Note     string         // stage "note": the line the TUI shows under the header
+}
+
+// Control is a command from a front end that has no keyboard of its own.
+// Everything but SeekTo runs the very key handler the terminal player runs,
+// so the two modes cannot drift apart.
+type Control struct {
+	Action string // toggle, play, pause, next, prev, seek, seekto, save, visualizer, lyrics, stop
+	Value  int64  // seekto: milliseconds from the start; seek: milliseconds to move
 }
 
 // lyricsState is what the lyrics pane is doing. "None" is an ordinary
@@ -339,6 +355,34 @@ func (m *Model) emit(stage string, pos time.Duration) {
 		Item:     m.items[m.idx],
 		Position: pos,
 		Duration: m.status.Duration,
+		Index:    m.idx + 1,
+		Total:    len(m.items),
+	})
+}
+
+// emitLevels reports one spectrum frame. Frames arrive about twenty times a
+// second, which is the rate a bar display wants and small enough to send as
+// it comes rather than buffer.
+func (m *Model) emitLevels(levels []float64) {
+	if m.opts.OnEvent == nil {
+		return
+	}
+	m.opts.OnEvent(Event{Stage: "levels", Levels: levels})
+}
+
+// emitLyrics reports a song's words once, when they arrive. A front end
+// follows them with the position events, the same way the screen does.
+func (m *Model) emitLyrics(l lyrics.Lyrics) {
+	if m.opts.OnEvent == nil || m.idx >= len(m.items) {
+		return
+	}
+	got := l
+	m.opts.OnEvent(Event{
+		Stage:  "lyrics",
+		Item:   m.items[m.idx],
+		Index:  m.idx + 1,
+		Total:  len(m.items),
+		Lyrics: &got,
 	})
 }
 
@@ -350,6 +394,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+
+	case Control:
+		return m.handleControl(msg)
 
 	case tickMsg:
 		m.status = m.opts.Engine.Status()
@@ -374,6 +421,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil // an older tap, already replaced
 		}
 		m.levels = msg.levels
+		m.emitLevels(msg.levels)
 		return m, waitForFrame(m.frames, m.tapGen)
 
 	case framesDoneMsg:
@@ -425,6 +473,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.items[msg.idx].Path = msg.path
 		m.setNote("saved " + m.items[msg.idx].Name())
+		m.emit("saved", m.status.Position)
 		return m, nil
 
 	case lyricsMsg:
@@ -440,10 +489,57 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lyrState = lyricsNone
 		default:
 			m.lyrState, m.lyr = lyricsReady, msg.lyr
+			m.emitLyrics(msg.lyr)
 		}
 		return m, nil
 	}
 	return m, nil
+}
+
+// handleControl runs a front end's command. Everything that has a key runs
+// through that key's handler, so a change to the terminal player changes
+// the panel with it; only seeking to an exact position has no key, because
+// no keyboard can point at a spot in a song.
+func (m *Model) handleControl(c Control) (tea.Model, tea.Cmd) {
+	switch c.Action {
+	case "toggle":
+		return m.press(" ")
+	case "play":
+		if m.status.Playing {
+			return m, nil
+		}
+		return m.press(" ")
+	case "pause":
+		if !m.status.Playing {
+			return m, nil
+		}
+		return m.press(" ")
+	case "next":
+		return m.press("n")
+	case "prev":
+		return m.press("p")
+	case "save":
+		return m.press("d")
+	case "visualizer":
+		return m.press("v")
+	case "lyrics":
+		return m.press("y")
+	case "stop":
+		return m.press("q")
+	case "seek":
+		return m, m.seek(time.Duration(c.Value) * time.Millisecond)
+	case "seekto":
+		return m, m.seekTo(time.Duration(c.Value) * time.Millisecond)
+	}
+	return m, nil
+}
+
+// press replays a key through the ordinary handler.
+func (m *Model) press(key string) (tea.Model, tea.Cmd) {
+	if key == " " {
+		return m.handleKey(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}})
+	}
+	return m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -560,12 +656,36 @@ func (m *Model) seek(delta time.Duration) tea.Cmd {
 	return m.startSpectrum(m.items[m.idx].Source(), at)
 }
 
+// seekTo jumps to an exact position, which only a front end with a
+// progress bar can ask for.
+func (m *Model) seekTo(at time.Duration) tea.Cmd {
+	if at < 0 {
+		at = 0
+	}
+	if err := m.opts.Engine.SeekTo(at); err != nil {
+		if errors.Is(err, player.ErrNotSeekable) {
+			m.setNote("this player can't seek — install mpv for seeking")
+		} else {
+			m.setNote(err.Error())
+		}
+		return nil
+	}
+	m.status.Position = at
+	if !m.showVis {
+		return nil
+	}
+	return m.startSpectrum(m.items[m.idx].Source(), at)
+}
+
 func (m *Model) restart() tea.Cmd {
 	return m.startTrack(m.idx)
 }
 
 func (m *Model) setNote(s string) {
 	m.note, m.noteAt = s, time.Now()
+	if m.opts.OnEvent != nil {
+		m.opts.OnEvent(Event{Stage: "note", Note: s})
+	}
 }
 
 // Close stops the spectrum tap. The engine belongs to the caller.

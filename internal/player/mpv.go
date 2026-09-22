@@ -258,6 +258,16 @@ func (e *mpvEngine) Seek(delta time.Duration) error {
 	return e.send("seek", delta.Seconds(), "relative")
 }
 
+// SeekTo asks mpv for the position itself rather than a distance from
+// where Go thinks playback is: the display's idea of the position is up to
+// a tick old, and a dragged progress bar would land that far off.
+func (e *mpvEngine) SeekTo(pos time.Duration) error {
+	if pos < 0 {
+		pos = 0
+	}
+	return e.send("seek", pos.Seconds(), "absolute")
+}
+
 func (e *mpvEngine) Status() Status {
 	e.mu.Lock()
 	defer e.mu.Unlock()
