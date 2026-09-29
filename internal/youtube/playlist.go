@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -41,14 +42,29 @@ func WatchURL(id string) string {
 	return "https://music.youtube.com/watch?v=" + id
 }
 
-// VideoID returns the id in a youtube.com or music.youtube.com watch link.
+// VideoID returns the video in a song link: a youtube.com or
+// music.youtube.com watch link (a list in it is ignored: the user copied
+// the song), youtu.be/<id> or youtube.com/shorts/<id>.
 func VideoID(link string) (string, bool) {
-	u, err := url.Parse(link)
-	if err != nil || !strings.HasSuffix(u.Host, "youtube.com") || u.Path != "/watch" {
+	u, err := url.Parse(strings.TrimSpace(link))
+	if err != nil {
 		return "", false
 	}
-	id := u.Query().Get("v")
-	return id, id != ""
+	var id string
+	switch host := strings.TrimPrefix(strings.ToLower(u.Host), "www."); {
+	case host == "youtu.be":
+		id = strings.Trim(u.Path, "/")
+	case host != "youtube.com" && !strings.HasSuffix(host, ".youtube.com"):
+		return "", false
+	case u.Path == "/watch":
+		id = u.Query().Get("v")
+	default:
+		id, _ = strings.CutPrefix(u.Path, "/shorts/")
+		if id == u.Path {
+			return "", false
+		}
+	}
+	return id, id != "" && !strings.Contains(id, "/")
 }
 
 // Playlist lists a playlist's videos as tracks, with what their titles and
@@ -91,14 +107,66 @@ func parsePlaylist(id string, raw []byte) (spotify.Collection, error) {
 		if e.ID == "" || e.Duration == 0 {
 			continue
 		}
-		t := FromVideo(e.Title, cmp.Or(e.Channel, e.Uploader))
-		t.ID = RefPrefix + e.ID
-		t.SourceURL = WatchURL(e.ID)
-		t.Duration = time.Duration(e.Duration * float64(time.Second))
-		t.CoverURL = "https://i.ytimg.com/vi/" + e.ID + "/hqdefault.jpg"
-		col.Tracks = append(col.Tracks, t)
+		col.Tracks = append(col.Tracks, videoTrack(e.ID, FromVideo(e.Title, cmp.Or(e.Channel, e.Uploader)), e.Duration))
 	}
 	return col, nil
+}
+
+// videoTrack fills in what every song read off a video carries.
+func videoTrack(id string, t spotify.Track, seconds float64) spotify.Track {
+	t.ID = RefPrefix + id
+	t.SourceURL = WatchURL(id)
+	t.Duration = time.Duration(seconds * float64(time.Second))
+	t.CoverURL = "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg"
+	return t
+}
+
+// Video reads one song link as a one-song collection. A single video's
+// details, unlike a playlist's listing, include YouTube Music's own song
+// metadata (track, artists, album, year) when the upload is a song, which
+// beats anything read off the title.
+func (r *Resolver) Video(ctx context.Context, link string) (spotify.Collection, error) {
+	id, ok := VideoID(link)
+	if !ok {
+		return spotify.Collection{}, fmt.Errorf("not a YouTube song link: %q", link)
+	}
+	out, err := r.opts.YtDlp.Run(ctx, "--dump-single-json", "--no-playlist", "--skip-download", "--no-warnings", "--no-progress",
+		"https://www.youtube.com/watch?v="+id)
+	if err != nil {
+		return spotify.Collection{}, fmt.Errorf("%w (reading video %s)", err, id)
+	}
+	return parseVideo(out)
+}
+
+func parseVideo(raw []byte) (spotify.Collection, error) {
+	var v struct {
+		ID          string   `json:"id"`
+		Title       string   `json:"title"`
+		Channel     string   `json:"channel"`
+		Uploader    string   `json:"uploader"`
+		Duration    float64  `json:"duration"`
+		Track       string   `json:"track"`
+		Artists     []string `json:"artists"`
+		Artist      string   `json:"artist"` // older yt-dlp: the artists joined by ", "
+		Album       string   `json:"album"`
+		ReleaseYear int      `json:"release_year"`
+	}
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return spotify.Collection{}, fmt.Errorf("parsing yt-dlp video output: %w", err)
+	}
+	if v.ID == "" {
+		return spotify.Collection{}, errors.New("yt-dlp returned no video")
+	}
+	t := FromVideo(v.Title, cmp.Or(v.Channel, v.Uploader))
+	artists := v.Artists
+	if len(artists) == 0 && v.Artist != "" {
+		artists = splitArtists(v.Artist)
+	}
+	if v.Track != "" && len(artists) > 0 {
+		t = spotify.Track{Title: v.Track, Artists: artists, AlbumArtist: artists[0], Album: v.Album, Year: v.ReleaseYear}
+	}
+	t = videoTrack(v.ID, t, v.Duration)
+	return spotify.Collection{Ref: spotify.Ref{Kind: spotify.KindTrack, ID: t.ID}, Name: t.Title, Tracks: []spotify.Track{t}}, nil
 }
 
 var (

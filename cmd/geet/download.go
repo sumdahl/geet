@@ -213,7 +213,7 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 
 // readLink reads the tracks behind one link: a Spotify track, album or
 // playlist, an Apple Music or Deezer song (link, itunes:<id> or
-// deezer:<id>), or a YouTube or YouTube Music playlist. lateTags is as for
+// deezer:<id>), or a YouTube or YouTube Music song or playlist. lateTags is as for
 // resolveMetadata.
 func readLink(ctx context.Context, cfg config.Config, rep *reporter, link string) (col spotify.Collection, lateTags bool, err error) {
 	if itunes.IsRef(link) {
@@ -224,12 +224,9 @@ func readLink(ctx context.Context, cfg config.Config, rep *reporter, link string
 		col, err := lookupDeezer(ctx, link)
 		return col, false, err
 	}
-	if _, ok := youtube.PlaylistID(link); ok {
-		col, err := readYouTubePlaylist(ctx, cfg, rep, link)
+	if isYouTube(link) {
+		col, err := readYouTube(ctx, cfg, rep, link)
 		return col, true, err
-	}
-	if _, ok := youtube.VideoID(link); ok {
-		return spotify.Collection{}, false, errors.New("a YouTube song link isn't supported; for a playlist, copy the playlist's own link (…/playlist?list=…)")
 	}
 	ref, err := spotify.ParseURL(link)
 	if err != nil {
@@ -447,6 +444,7 @@ func runDownload(ctx context.Context, cfg config.Config, rep *reporter, col spot
 		return res, err
 	}
 	d := newDownloader(cfg, root, rep, idx)
+	d.ownVideo = strings.HasPrefix(ref.ID, youtube.RefPrefix)
 	if lateTags {
 		d.dz = deezer.New("")
 	}
@@ -518,8 +516,13 @@ type downloader struct {
 	yt   *youtube.Resolver
 	ytd  ytdlp.Runner
 	rep  *reporter
-	// finder names the songs of a YouTube playlist (songFinder).
+	// finder names the songs of a YouTube link (songFinder).
 	finder *songFinder
+	// ownVideo downloads a YouTube song link's own video, even once a
+	// catalog has named the song: the user picked that upload. A
+	// playlist's songs are matched as usual, which prefers an official
+	// audio upload over a music video with an intro.
+	ownVideo bool
 
 	ageNoticed    atomic.Bool // the age-restriction advice is shown once a run
 	signInNoticed atomic.Bool // and the sign-in advice
@@ -623,7 +626,7 @@ func (d *downloader) resolve(ctx context.Context, j *trackJob) (*trackJob, bool,
 
 	// A song no catalog knows is only as good as its video's title, too
 	// little to search by: the playlist's own video is the download.
-	if strings.HasPrefix(j.t.ID, youtube.RefPrefix) {
+	if strings.HasPrefix(j.t.ID, youtube.RefPrefix) || (d.ownVideo && j.video != "") {
 		return d.useVideo(j)
 	}
 	best, all, err := d.yt.Resolve(ctx, j.t)
