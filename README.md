@@ -126,6 +126,7 @@ Releases follow [Semantic Versioning](https://semver.org/), and the changes are 
 
 ```sh
 geet download <spotify-url>        # a track, album or playlist
+geet download <youtube-playlist>   # a YouTube or YouTube Music playlist
 geet search <words…>               # find a song by name, pick it, download it
 geet play [words… | link]          # play your library (or a song), with a spectrum and lyrics
 geet trending                      # what people are playing now: pick one and listen
@@ -139,6 +140,7 @@ geet version
 Accepted links:
 - `https://open.spotify.com/{track|album|playlist}/<id>`, with or without `?si=…` or a `/intl-xx/` prefix
 - `spotify:{track|album|playlist}:<id>`
+- `https://music.youtube.com/playlist?list=<id>` or `https://www.youtube.com/playlist?list=<id>` (see below)
 
 Share links from the Spotify app work as copied. Artist links aren't supported.
 
@@ -155,6 +157,21 @@ geet download "<url>" -v                             # debug logs, including eve
 ```
 
 Exit codes: `0` all tracks succeeded, `1` some failed (the others were saved), `2` fatal (bad link, missing tool, interrupted).
+
+### YouTube and YouTube Music playlists
+
+```sh
+geet download "https://music.youtube.com/playlist?list=PL…"
+```
+
+A YouTube playlist has no song metadata, only video titles, so geet reads each title ("Artist - Song ft. X (Official Video)", "Artist | Song", or just the song on the artist's channel) and looks the song up in Deezer's and Apple's catalogs. Most songs come out tagged like any other download: album, year, track number, ISRC and the album cover. The audio is still matched the usual way, so an official audio upload is preferred over a music video with an intro. The playlist's own video is used only when nothing better is found.
+
+When neither catalog has the song (vlogs, unreleased tracks, songs the catalogs don't carry in your region), geet downloads the playlist's own video and tags it from the video title, with the video's thumbnail as the cover.
+
+- The whole playlist is read, with no 100-song limit, in a couple of seconds.
+- Songs are looked up as they reach the front of the queue, not all at once before the first download starts. Deezer is asked first, and Apple (which allows about 20 requests a minute) only for the songs Deezer doesn't have.
+- Re-running a playlist skips the songs already saved without looking any of them up again.
+- Private playlists need your YouTube sign-in (`youtube.cookies_from_browser`). A link to one song played from a playlist (`watch?v=…&list=…`) isn't accepted: copy the playlist's own link.
 
 ### Playlists over 100 songs
 
@@ -553,7 +570,7 @@ The full schema and its compatibility rules are in [docs/03-communication-contra
 | `internal/spotify` | Link parsing. `Web` scrapes the public pages (keyless); `API` uses the official Web API. Both return a `Collection`. |
 | `internal/deezer` | Fills in what the public pages lack (ISRC, disc and track numbers) from Deezer's keyless API. Best effort: album match first, then per-track search. |
 | `internal/itunes` | Keyless catalog search and lookup for `geet search`. Merges album editions and ranks originals above covers. |
-| `internal/youtube` | Builds the query and scores candidates from yt-dlp's flat search. Keeps every candidate's score or rejection reason for debugging. |
+| `internal/youtube` | Builds the query and scores candidates from yt-dlp's flat search. Keeps every candidate's score or rejection reason for debugging. Also reads YouTube playlists and parses video titles into songs. |
 | `internal/ytdlp` | Shared yt-dlp runner (cookies, extra args, streaming output, error reasons) |
 | `internal/download` | Fetches the best audio stream unmodified, reporting progress |
 | `internal/audio` | One ffmpeg pass: copy or convert, write tags, embed the cover. Also the quality warning. |

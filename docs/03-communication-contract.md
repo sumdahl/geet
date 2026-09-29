@@ -31,7 +31,7 @@ as a stable API even before the plugin exists.
   | `stage` | always: `resolved`, `downloading`, `tagging`, `done`, `failed` |
   | `error` | `failed` only |
   | `fatal` | `true` when the whole run stopped (bad URL, missing tool, Ctrl+C); exit code is then 2 |
-  | `spotify_id`, `index` (1-based), `total` | every per-track event |
+  | `spotify_id`, `index` (1-based), `total` | every per-track event. Not always Spotify's: `itunes:<id>`, `deezer:<id>`, or `youtube:<video id>` for a song from a YouTube playlist |
   | `path` | every per-track event: where the file is/will be |
   | `youtube_url` | from `resolved` on |
   | `skipped` | `done` for an existing file, or a duplicate with `duplicates = skip` |

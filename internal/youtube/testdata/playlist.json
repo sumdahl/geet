@@ -1,0 +1,43 @@
+{
+ "id": "PLplXQ2cg9B_qrCVd1J_iId5SvP8Kf_BfS",
+ "title": "Top Songs of the Decade Playlist (2010-2019)",
+ "_type": "playlist",
+ "entries": [
+  {
+   "id": "e-ORhEE9VVg",
+   "title": "Taylor Swift - Blank Space",
+   "channel": "Taylor Swift",
+   "uploader": "Taylor Swift",
+   "duration": 273,
+   "url": "https://music.youtube.com/watch?v=e-ORhEE9VVg",
+   "ie_key": "Youtube"
+  },
+  {
+   "id": "deleted00001",
+   "title": "[Deleted video]",
+   "channel": null,
+   "uploader": null,
+   "duration": null,
+   "url": "https://www.youtube.com/watch?v=deleted00001",
+   "ie_key": "Youtube"
+  },
+  {
+   "id": "34Na4j8AVgA",
+   "title": "The Weeknd - Starboy ft. Daft Punk (Official Video) ft. Daft Punk",
+   "channel": "The Weeknd",
+   "uploader": "The Weeknd",
+   "duration": 274,
+   "url": "https://music.youtube.com/watch?v=34Na4j8AVgA",
+   "ie_key": "Youtube"
+  },
+  {
+   "id": "3O1_3zBUKM8",
+   "title": "Naughty Boy - La la la ft. Sam Smith (Official Video)",
+   "channel": "Naughty Boy",
+   "uploader": "Naughty Boy",
+   "duration": 244,
+   "url": "https://music.youtube.com/watch?v=3O1_3zBUKM8",
+   "ie_key": "Youtube"
+  }
+ ]
+}
