@@ -212,8 +212,8 @@ func downloadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 }
 
 // readLink reads the tracks behind one link: a Spotify track, album or
-// playlist, or an Apple Music or Deezer song (link, itunes:<id> or
-// deezer:<id>). lateTags is as for
+// playlist, an Apple Music or Deezer song (link, itunes:<id> or
+// deezer:<id>), or a YouTube or YouTube Music playlist. lateTags is as for
 // resolveMetadata.
 func readLink(ctx context.Context, cfg config.Config, rep *reporter, link string) (col spotify.Collection, lateTags bool, err error) {
 	if itunes.IsRef(link) {
@@ -223,6 +223,13 @@ func readLink(ctx context.Context, cfg config.Config, rep *reporter, link string
 	if deezer.IsRef(link) {
 		col, err := lookupDeezer(ctx, link)
 		return col, false, err
+	}
+	if _, ok := youtube.PlaylistID(link); ok {
+		col, err := readYouTubePlaylist(ctx, cfg, rep, link)
+		return col, true, err
+	}
+	if _, ok := youtube.VideoID(link); ok {
+		return spotify.Collection{}, false, errors.New("a YouTube song link isn't supported; for a playlist, copy the playlist's own link (…/playlist?list=…)")
 	}
 	ref, err := spotify.ParseURL(link)
 	if err != nil {
@@ -465,6 +472,7 @@ func runDownload(ctx context.Context, cfg config.Config, rep *reporter, col spot
 		{Name: "tag", Workers: tagWorkers, Do: d.tag},
 	}, isFatal, func(j *trackJob, err error) {
 		if err == nil {
+			d.rememberVideo(ctx, j)
 			if j.ev.Skipped || j.ev.DuplicateOf != "" {
 				res.existing++
 			} else {
@@ -510,6 +518,8 @@ type downloader struct {
 	yt   *youtube.Resolver
 	ytd  ytdlp.Runner
 	rep  *reporter
+	// finder names the songs of a YouTube playlist (songFinder).
+	finder *songFinder
 
 	ageNoticed    atomic.Bool // the age-restriction advice is shown once a run
 	signInNoticed atomic.Bool // and the sign-in advice
@@ -528,6 +538,8 @@ func newDownloader(cfg config.Config, root string, rep *reporter, idx *index.Ind
 		idx:  idx,
 		ytd:  ytd,
 		rep:  rep,
+		// Only used for YouTube playlists; building it costs nothing.
+		finder: newSongFinder(cfg),
 		yt: youtube.New(youtube.Options{
 			YtDlp:           ytd,
 			SearchQuery:     cfg.YouTube.SearchQuery,
@@ -555,6 +567,9 @@ type trackJob struct {
 	// be had and the clean one was saved instead.
 	cleanEdit string
 	titleOnly bool // matched by title and length alone (youtube.Scored.TitleOnly)
+	// video is the YouTube playlist's own video for this song, the
+	// download when no catalog knows the song or no better upload is found.
+	video string
 }
 
 func (d *downloader) emit(j *trackJob, stage string) {
@@ -567,6 +582,16 @@ func (d *downloader) emit(j *trackJob, stage string) {
 // a copy downloaded elsewhere, or a download of the YouTube upload it finds.
 func (d *downloader) resolve(ctx context.Context, j *trackJob) (*trackJob, bool, error) {
 	j.tu = d.rep.ui.track(j.ev.Index, j.ev.Total, j.ev.Track)
+	if vid, ok := strings.CutPrefix(j.t.ID, youtube.RefPrefix); ok {
+		if d.savedVideo(j, vid) {
+			return j, true, nil
+		}
+		if t, ok := d.finder.find(ctx, j.t); ok {
+			j.t = t
+		} else if ctx.Err() == nil {
+			slog.DebugContext(ctx, "no catalog has this video's song; tagging from its title", "video", vid, "title", j.t.Title)
+		}
+	}
 	j.dest = library.Path(d.root, d.cfg.OutputTemplate, j.t, d.cfg.Format)
 	j.ev.Path = j.dest
 	if !d.cfg.Overwrite {
@@ -596,7 +621,15 @@ func (d *downloader) resolve(ctx context.Context, j *trackJob) (*trackJob, bool,
 		}
 	}
 
+	// A song no catalog knows is only as good as its video's title, too
+	// little to search by: the playlist's own video is the download.
+	if strings.HasPrefix(j.t.ID, youtube.RefPrefix) {
+		return d.useVideo(j)
+	}
 	best, all, err := d.yt.Resolve(ctx, j.t)
+	if errors.Is(err, youtube.ErrNoMatch) && j.video != "" {
+		return d.useVideo(j)
+	}
 	if err != nil {
 		return j, false, err
 	}
@@ -606,6 +639,39 @@ func (d *downloader) resolve(ctx context.Context, j *trackJob) (*trackJob, bool,
 	j.ev.YouTubeURL = best.URL
 	d.emit(j, "resolved")
 	return j, false, nil
+}
+
+// savedVideo skips a YouTube playlist song an earlier run saved in this
+// folder, before any catalog lookup: re-running a big playlist then costs
+// no requests for the songs it already has.
+func (d *downloader) savedVideo(j *trackJob, vid string) bool {
+	j.video = vid
+	if d.cfg.Overwrite {
+		return false
+	}
+	src, ok := d.idx.Lookup(j.t.ID, "", d.cfg.Format, d.root)
+	if !ok || filepath.Dir(src) != d.root {
+		return false
+	}
+	j.ev.Path, j.ev.Skipped = src, true
+	d.emit(j, "done")
+	return true
+}
+
+func (d *downloader) useVideo(j *trackJob) (*trackJob, bool, error) {
+	j.url = "https://www.youtube.com/watch?v=" + j.video
+	j.ev.YouTubeURL = j.url
+	d.emit(j, "resolved")
+	return j, false, nil
+}
+
+// rememberVideo records a YouTube playlist song under its video as well as
+// its catalog entry, so savedVideo finds it next time.
+func (d *downloader) rememberVideo(ctx context.Context, j *trackJob) {
+	if j.video == "" || j.ev.Path == "" || j.t.ID == youtube.RefPrefix+j.video {
+		return
+	}
+	d.remember(ctx, spotify.Track{ID: youtube.RefPrefix + j.video, ISRC: j.t.ISRC}, j.ev.Path)
 }
 
 func (d *downloader) download(ctx context.Context, j *trackJob) (*trackJob, bool, error) {

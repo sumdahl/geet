@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/sumdahl/geet/internal/itunes"
+	"github.com/sumdahl/geet/internal/youtube"
 )
 
 // Entry is one track in one format. Path is its first copy; Also lists
@@ -345,6 +346,8 @@ func readTags(ctx context.Context, ffprobe, path string) (id, isrc string, ok bo
 				id = rest
 			} else if itID, err := itunes.ParseRef(v); err == nil {
 				id = itunes.RefPrefix + itID // a search download: Apple Music link
+			} else if vid, ok := youtube.VideoID(v); ok {
+				id = youtube.RefPrefix + vid // a YouTube playlist song no catalog knew
 			}
 		case "isrc", "tsrc":
 			isrc = v

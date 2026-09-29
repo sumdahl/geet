@@ -7,6 +7,15 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Added
+- **YouTube and YouTube Music playlists download.** `geet download
+  "https://music.youtube.com/playlist?list=…"` reads the whole playlist
+  (no 100-song limit), names each song from its video title, and looks it
+  up in Deezer's and Apple's catalogs for full tags. A song neither catalog
+  has is downloaded from the playlist's own video and tagged from its
+  title. The lookups run in the resolve stage, so downloads start right
+  away, and a re-run skips saved songs without looking them up.
+
 ### Fixed
 - `geet play --json` reports a failed lyrics lookup as a `lyrics` event with
   an `error`, so a front end stops showing "looking…" when LRCLIB times out.
