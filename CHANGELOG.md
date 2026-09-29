@@ -7,6 +7,13 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Fixed
+- `geet play --json` reports a failed lyrics lookup as a `lyrics` event with
+  an `error`, so a front end stops showing "looking…" when LRCLIB times out.
+- geet's mpv could be sent SIGTERM mid-song: Linux delivers the
+  parent-death signal when the starting *thread* exits, and Go may retire
+  threads. mpv is now started from a thread held until mpv is reaped.
+
 ### Added
 - **`geet play --json` is a full player a front end can drive.** It reads
   commands on stdin (`toggle`, `play`, `pause`, `next`, `prev`, `seek <ms>`,

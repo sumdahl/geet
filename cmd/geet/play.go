@@ -50,6 +50,7 @@ type playEvent struct {
 	Lyrics     []lyricLine `json:"lyrics,omitempty"`
 	Synced     bool        `json:"synced,omitempty"`
 	Note       string      `json:"note,omitempty"`
+	Error      string      `json:"error,omitempty"`
 }
 
 // lyricLine is one line of a song, with where it starts when anyone has
@@ -208,6 +209,7 @@ func newPlayEvent(e tui.Event) playEvent {
 		Downloaded: e.Item.Downloaded(),
 		Levels:     e.Levels,
 		Note:       e.Note,
+		Error:      e.Err,
 	}
 	if e.Lyrics != nil {
 		ev.Synced = e.Lyrics.Synced

@@ -95,7 +95,7 @@ without drawing the terminal screen:
 | `playing` / `paused` | playback was resumed or paused |
 | `position` | about twice a second while playing |
 | `levels` | one spectrum frame, about twenty times a second: `levels` is one 0–1 value per band (24). Nothing else is on this line — it is about whatever is playing |
-| `lyrics` | the whole song's words, once, when they arrive: `lyrics` is `[{"at_ms":…,"text":…}]` and `synced` says whether the times are real |
+| `lyrics` | the whole song's words, once, when they arrive: `lyrics` is `[{"at_ms":…,"text":…}]` and `synced` says whether the times are real. A song with no lyrics anywhere gets a `lyrics` event with no `lyrics` field; a lookup that failed (LRCLIB down, a timeout) gets the same plus `error` |
 | `note` | the one-line message the terminal player shows under its header (`note`); no song fields |
 | `saved` | the playing song was downloaded and is now a file (`path`) |
 | `stopped` | the queue ended or the player was quit |

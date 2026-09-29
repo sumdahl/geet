@@ -26,6 +26,10 @@ type mpvEngine struct {
 	nextID  int
 	pending map[int]chan mpvReply
 	closed  bool
+
+	// release frees the thread mpv was started from (startTiedToParent),
+	// once mpv has been reaped. Nil for an engine attached to a test socket.
+	release func()
 }
 
 type mpvReply struct {
@@ -79,8 +83,8 @@ func newMPV(ctx context.Context, bin string) (*mpvEngine, error) {
 	// mpv must not outlive geet. It is started with --idle, so a geet that
 	// is killed rather than closed (a shell restart, SIGKILL) would leave a
 	// silent mpv holding an MPRIS name forever.
-	dieWithParent(cmd)
-	if err := cmd.Start(); err != nil {
+	release, err := startTiedToParent(cmd)
+	if err != nil {
 		return nil, err
 	}
 
@@ -88,13 +92,16 @@ func newMPV(ctx context.Context, bin string) (*mpvEngine, error) {
 	if err != nil {
 		_ = cmd.Process.Kill()
 		_, _ = cmd.Process.Wait()
+		release()
 		return nil, fmt.Errorf("mpv did not open its control socket: %w", err)
 	}
 
 	e, err := attachMPV(conn, cmd, sock)
 	if err != nil {
+		release()
 		return nil, err
 	}
+	e.release = release
 	return e, nil
 }
 
@@ -312,6 +319,9 @@ func (e *mpvEngine) Close() error {
 	case <-time.After(2 * time.Second):
 		_ = e.cmd.Process.Kill()
 		<-done
+	}
+	if e.release != nil {
+		e.release()
 	}
 	_ = os.Remove(e.sock)
 	return nil
