@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -104,5 +105,20 @@ func TestControlsReportToAFrontEnd(t *testing.T) {
 	m.emitLevels([]float64{0.1, 0.2})
 	if len(stages) < 2 || stages[0] != "paused" || stages[len(stages)-1] != "levels" {
 		t.Fatalf("stages = %v, want paused … levels", stages)
+	}
+}
+
+// A failed lookup is reported too, with why, so the panel can stop waiting.
+func TestFailedLyricsAreReported(t *testing.T) {
+	t.Parallel()
+	var got []Event
+	m := New(context.Background(), Options{
+		Items:   []player.Item{{Path: "/music/a.opus"}},
+		Engine:  &fakeEngine{playing: true},
+		OnEvent: func(ev Event) { got = append(got, ev) },
+	})
+	m.Update(lyricsMsg{idx: 0, err: errors.New("lrclib: timeout")})
+	if len(got) != 1 || got[0].Stage != "lyrics" || got[0].Err != "lrclib: timeout" {
+		t.Fatalf("events = %+v, want one lyrics event with the error", got)
 	}
 }

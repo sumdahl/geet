@@ -50,6 +50,7 @@ type Event struct {
 	Levels   []float64      // stage "levels": one value per spectrum band, 0..1
 	Lyrics   *lyrics.Lyrics // stage "lyrics": the whole song's words, once
 	Note     string         // stage "note": the line the TUI shows under the header
+	Err      string         // stage "lyrics": why the lookup failed; Lyrics is then empty
 }
 
 // Control is a command from a front end that has no keyboard of its own.
@@ -370,9 +371,10 @@ func (m *Model) emitLevels(levels []float64) {
 	m.opts.OnEvent(Event{Stage: "levels", Levels: levels})
 }
 
-// emitLyrics reports a song's words once, when they arrive. A front end
-// follows them with the position events, the same way the screen does.
-func (m *Model) emitLyrics(l lyrics.Lyrics) {
+// emitLyrics reports a song's words once, when they arrive, or why they
+// could not be read. A front end follows them with the position events, the
+// same way the screen does.
+func (m *Model) emitLyrics(l lyrics.Lyrics, lookupErr string) {
 	if m.opts.OnEvent == nil || m.idx >= len(m.items) {
 		return
 	}
@@ -383,6 +385,7 @@ func (m *Model) emitLyrics(l lyrics.Lyrics) {
 		Index:  m.idx + 1,
 		Total:  len(m.items),
 		Lyrics: &got,
+		Err:    lookupErr,
 	})
 }
 
@@ -485,15 +488,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lyrState = lyricsNone
 			// A front end is told there are none, rather than left
 			// waiting: plenty of songs have no words anywhere.
-			m.emitLyrics(lyrics.Lyrics{})
+			m.emitLyrics(lyrics.Lyrics{}, "")
 		case msg.err != nil:
 			m.lyrState, m.lyrErr = lyricsFailed, msg.err.Error()
+			// Also reported: a front end left on "looking…" can't tell
+			// a timeout from a lookup still under way.
+			m.emitLyrics(lyrics.Lyrics{}, m.lyrErr)
 		case msg.lyr.Empty():
 			m.lyrState = lyricsNone
-			m.emitLyrics(lyrics.Lyrics{})
+			m.emitLyrics(lyrics.Lyrics{}, "")
 		default:
 			m.lyrState, m.lyr = lyricsReady, msg.lyr
-			m.emitLyrics(msg.lyr)
+			m.emitLyrics(msg.lyr, "")
 		}
 		return m, nil
 	}
