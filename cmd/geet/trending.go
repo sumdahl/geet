@@ -30,8 +30,14 @@ type trendingResult struct {
 
 // trendingDoc is what the cache holds: the songs, and when they were read.
 type trendingDoc struct {
-	Source    string           `json:"source"`
-	Country   string           `json:"country"`
+	Source  string `json:"source"`
+	Country string `json:"country"`
+	// Limit is how many songs this chart was fetched for. A cache holding
+	// twenty cannot answer a request for fifty, and without this the
+	// shorter list was served until the cache expired — which looked, from
+	// a front end that had just been told to show more, like the setting
+	// did nothing.
+	Limit     int              `json:"limit,omitempty"`
 	FetchedAt time.Time        `json:"fetched_at"`
 	Tracks    []spotify.Track  `json:"tracks"`
 	Results   []trendingResult `json:"-"`
@@ -132,7 +138,7 @@ func trendingCmd(ctx context.Context, args []string, stdout, stderr io.Writer) i
 func trendingNow(ctx context.Context, cfg config.Config, source string, limit int, refresh bool) (trendingDoc, error) {
 	path := trendingCachePath(cfg, source)
 	if !refresh {
-		if doc, ok := readTrendingCache(path, cfg.Trending.CacheFor.Duration, limit); ok {
+		if doc, ok := readTrendingCache(path, cfg.Trending.CacheFor.Duration, limit); ok && doc.enoughFor(limit) {
 			slog.DebugContext(ctx, "trending from cache", "path", path, "age", time.Since(doc.FetchedAt))
 			return doc, nil
 		}
@@ -185,7 +191,7 @@ func fetchTrending(ctx context.Context, cfg config.Config, source string, limit 
 		tracks = tracks[:limit]
 	}
 
-	doc := trendingDoc{Source: from, Country: cfg.Search.Country, FetchedAt: time.Now(), Tracks: tracks}
+	doc := trendingDoc{Source: from, Country: cfg.Search.Country, Limit: limit, FetchedAt: time.Now(), Tracks: tracks}
 	doc.Results = make([]trendingResult, len(tracks))
 	for i, t := range tracks {
 		doc.Results[i] = trendingResult{
@@ -255,6 +261,14 @@ func trendingCachePath(cfg config.Config, source string) string {
 		name += "-" + strings.ToLower(cfg.Search.Country)
 	}
 	return filepath.Join(dir, "geet", name+".json")
+}
+
+// enoughFor reports whether a cached chart can answer a request for this
+// many songs: either it holds them, or it was fetched for at least that
+// many and the sources had no more. A cache written before Limit existed
+// is judged by its length alone.
+func (d trendingDoc) enoughFor(limit int) bool {
+	return len(d.Tracks) >= limit || d.Limit >= limit
 }
 
 func readTrendingCache(path string, maxAge time.Duration, limit int) (trendingDoc, bool) {

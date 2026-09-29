@@ -78,7 +78,8 @@ func (e *ffplayEngine) TogglePause() (bool, error) {
 	return true, nil
 }
 
-func (e *ffplayEngine) Seek(time.Duration) error { return ErrNotSeekable }
+func (e *ffplayEngine) Seek(time.Duration) error   { return ErrNotSeekable }
+func (e *ffplayEngine) SeekTo(time.Duration) error { return ErrNotSeekable }
 
 // SetDuration lets the caller tell the engine how long the track is, since
 // ffplay never says. mpv reports it itself.

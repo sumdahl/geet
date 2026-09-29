@@ -7,6 +7,36 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Added
+- **`geet play --json` is a full player a front end can drive.** It reads
+  commands on stdin (`toggle`, `play`, `pause`, `next`, `prev`, `seek <ms>`,
+  `seekto <ms>`, `save`, `visualizer`, `lyrics`, `stop`) and reports
+  everything a display needs: the spectrum (`levels`, about twenty frames a
+  second), the song's lyrics with their timings (`lyrics`), the player's own
+  notes (`note`), a `saved` stage, and the song's title, artist, album,
+  cover and ref on every event. Every command but `seekto` runs the terminal
+  player's own key handler, so the two cannot drift apart. This is what lets
+  the Omarchy panel play a song in the panel instead of opening a terminal.
+- `SeekTo` on the player engine: mpv seeks to an absolute position, which is
+  what a dragged progress bar asks for. ffplay still cannot seek.
+
+### Fixed
+- **The player no longer pretends to be your music player.** mpv is started
+  with `--load-scripts=no`, so the system-wide `mpv-mpris` script cannot
+  publish geet's internal mpv on MPRIS with the raw stream URL as its title.
+  It was capturing every lyrics widget and media applet on the desktop, all
+  of which pick whichever player says it is playing.
+- mpv is no longer left running when geet is killed rather than closed (a
+  shell restart, SIGKILL): on Linux it is asked to die with its parent. A
+  leftover `--idle` mpv went on playing with nothing to control it.
+- **`geet trending --limit` was ignored for six hours after the first run.**
+  A cached chart was served whatever its length, so asking for fifty songs
+  kept returning the twenty already on disk — from a front end with a
+  "how many to show" setting, the setting looked like it did nothing.
+- `geet play --json` numbered a queue of streaming songs wrong (they share
+  an empty path) and reported a Spotify link with no id for songs read off
+  disk.
+
 ## [0.6.0] - 2026-09-21
 
 geet plays music now, as well as downloading it.

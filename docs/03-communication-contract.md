@@ -92,9 +92,35 @@ without drawing the terminal screen:
 | stage | when |
 |---|---|
 | `track` | a new song started; `path`, `index` and `total` say which |
-| `playing` / `paused` | the pause key was used |
+| `playing` / `paused` | playback was resumed or paused |
 | `position` | about twice a second while playing |
+| `levels` | one spectrum frame, about twenty times a second: `levels` is one 0–1 value per band (24). Nothing else is on this line — it is about whatever is playing |
+| `lyrics` | the whole song's words, once, when they arrive: `lyrics` is `[{"at_ms":…,"text":…}]` and `synced` says whether the times are real |
+| `note` | the one-line message the terminal player shows under its header (`note`); no song fields |
+| `saved` | the playing song was downloaded and is now a file (`path`) |
 | `stopped` | the queue ended or the player was quit |
+
+A song's own fields ride along on every stage that has one: `title`,
+`artist`, `album`, `cover_url`, `ref` (a link that `geet play` or
+`geet download` accepts, empty for a local file) and `downloaded`.
+
+### Controlling it
+`--json` reads commands from stdin, one per line, so a front end with no
+keyboard of its own drives the same player:
+
+| command | does |
+|---|---|
+| `toggle` / `play` / `pause` | pause or resume |
+| `next` / `prev` | walk the queue (`prev` restarts the song after 3s, as the key does) |
+| `seek <ms>` | move by a distance, negative to rewind |
+| `seekto <ms>` | move to an exact position — what a progress bar points at |
+| `save` | download the playing song and keep it |
+| `visualizer` / `lyrics` | turn either off or back on |
+| `stop` | quit the player |
+
+Every command but `seekto` runs the very handler its key runs, so the panel
+and the terminal cannot drift apart. An unknown line is ignored, and a
+closed stdin simply means no remote control.
 
 `--json` never draws the player: the same queue, lyrics and events run with
 no display, which is what the Omarchy plugin consumes. Fields are additive

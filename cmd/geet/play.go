@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -9,7 +10,9 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -30,12 +33,30 @@ import (
 // fields (docs/03-communication-contract.md).
 type playEvent struct {
 	Track      string `json:"track"`
-	Stage      string `json:"stage"` // track, playing, paused, position, stopped
+	Stage      string `json:"stage"` // track, playing, paused, position, stopped, levels, lyrics, note, saved
 	Path       string `json:"path,omitempty"`
 	PositionMS int64  `json:"position_ms"`
 	DurationMS int64  `json:"duration_ms,omitempty"`
 	Index      int    `json:"index,omitempty"`
 	Total      int    `json:"total,omitempty"`
+	// A front end with no screen of its own draws the song from these.
+	Title      string      `json:"title,omitempty"`
+	Artist     string      `json:"artist,omitempty"`
+	Album      string      `json:"album,omitempty"`
+	CoverURL   string      `json:"cover_url,omitempty"`
+	Ref        string      `json:"ref,omitempty"`
+	Downloaded bool        `json:"downloaded,omitempty"`
+	Levels     []float64   `json:"levels,omitempty"`
+	Lyrics     []lyricLine `json:"lyrics,omitempty"`
+	Synced     bool        `json:"synced,omitempty"`
+	Note       string      `json:"note,omitempty"`
+}
+
+// lyricLine is one line of a song, with where it starts when anyone has
+// synced it.
+type lyricLine struct {
+	AtMS int64  `json:"at_ms"`
+	Text string `json:"text"`
 }
 
 func playCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -64,7 +85,7 @@ func playCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		nothingToPlay(cfg, target, stderr)
 		return exitPartial
 	}
-	return playItems(ctx, c, cfg, items, stdout, stderr)
+	return playItems(ctx, c, cfg, items, os.Stdin, stdout, stderr)
 }
 
 // playTracks plays songs another command picked (the trending chart), with
@@ -76,11 +97,12 @@ func playTracks(ctx context.Context, c *cli, cfg config.Config, tracks []spotify
 		fmt.Fprintln(stderr, "Nothing to play.")
 		return exitPartial
 	}
-	return playItems(ctx, c, cfg, items, stdout, stderr)
+	return playItems(ctx, c, cfg, items, os.Stdin, stdout, stderr)
 }
 
-// playItems opens the player on a ready queue.
-func playItems(ctx context.Context, c *cli, cfg config.Config, items []player.Item, stdout, stderr io.Writer) int {
+// playItems opens the player on a ready queue. stdin is the front end's
+// control channel in --json mode and unused otherwise.
+func playItems(ctx context.Context, c *cli, cfg config.Config, items []player.Item, stdin io.Reader, stdout, stderr io.Writer) int {
 	if cfg.Player.Shuffle {
 		player.Shuffle(items)
 	}
@@ -112,7 +134,7 @@ func playItems(ctx context.Context, c *cli, cfg config.Config, items []player.It
 	}
 
 	if c.json {
-		return playJSON(ctx, opts, stdout, stderr)
+		return playJSON(ctx, opts, stdin, stdout, stderr)
 	}
 	return playScreen(ctx, opts, stderr)
 }
@@ -136,34 +158,118 @@ func playScreen(ctx context.Context, opts tui.Options, stderr io.Writer) int {
 // playJSON plays without a screen and streams events, for the plugin. The
 // same model runs it, so both modes behave identically; only the display is
 // missing.
-func playJSON(ctx context.Context, opts tui.Options, stdout, stderr io.Writer) int {
+func playJSON(ctx context.Context, opts tui.Options, stdin io.Reader, stdout, stderr io.Writer) int {
 	enc := newJSONEncoder(stdout)
-	total := len(opts.Items)
-	position := map[string]int{}
-	for i, it := range opts.Items {
-		position[it.Path] = i + 1
-	}
+	// Events can come from the spectrum tap's goroutine as well as the
+	// model's, and an Encoder is not safe for two writers.
+	var mu sync.Mutex
 	opts.OnEvent = func(e tui.Event) {
-		_ = enc.Encode(playEvent{
-			Track:      e.Item.Name(),
-			Stage:      e.Stage,
-			Path:       e.Item.Path,
-			PositionMS: e.Position.Milliseconds(),
-			DurationMS: e.Duration.Milliseconds(),
-			Index:      position[e.Item.Path],
-			Total:      total,
-		})
+		mu.Lock()
+		defer mu.Unlock()
+		_ = enc.Encode(newPlayEvent(e))
 	}
 	m := tui.New(ctx, opts)
 	defer m.Close()
 	// tea.WithoutRenderer runs the same model with no output: the queue,
-	// lyrics and events all work, and nothing is drawn.
+	// lyrics and events all work, and nothing is drawn. Input is read here
+	// instead of by bubbletea, because the front end sends words, not keys.
 	p := tea.NewProgram(m, tea.WithoutRenderer(), tea.WithInput(nil), tea.WithContext(ctx), tea.WithoutSignalHandler())
+	go readControls(ctx, stdin, p)
 	if _, err := p.Run(); err != nil && !errors.Is(err, tea.ErrProgramKilled) && !errors.Is(err, context.Canceled) {
 		fmt.Fprintf(stderr, "geet: %v\n", err)
 		return exitFatal
 	}
 	return exitOK
+}
+
+// newPlayEvent flattens a player event into one NDJSON line. The frames
+// and notes carry no song: they are about whatever is playing, and
+// repeating its details twenty times a second says nothing.
+func newPlayEvent(e tui.Event) playEvent {
+	switch e.Stage {
+	case "levels":
+		return playEvent{Stage: e.Stage, Levels: e.Levels}
+	case "note":
+		return playEvent{Stage: e.Stage, Note: e.Note}
+	}
+	ev := playEvent{
+		Track:      e.Item.Name(),
+		Stage:      e.Stage,
+		Path:       e.Item.Path,
+		PositionMS: e.Position.Milliseconds(),
+		DurationMS: e.Duration.Milliseconds(),
+		Index:      e.Index,
+		Total:      e.Total,
+		Title:      e.Item.Track.Title,
+		Artist:     strings.Join(e.Item.Track.Artists, ", "),
+		Album:      e.Item.Track.Album,
+		CoverURL:   e.Item.Track.CoverURL,
+		Ref:        trackRef(e.Item.Track),
+		Downloaded: e.Item.Downloaded(),
+		Levels:     e.Levels,
+		Note:       e.Note,
+	}
+	if e.Lyrics != nil {
+		ev.Synced = e.Lyrics.Synced
+		ev.Lyrics = make([]lyricLine, 0, len(e.Lyrics.Lines))
+		for _, l := range e.Lyrics.Lines {
+			ev.Lyrics = append(ev.Lyrics, lyricLine{AtMS: l.At.Milliseconds(), Text: l.Text})
+		}
+	}
+	return ev
+}
+
+// trackRef is the link a front end can hand back to `geet play` or
+// `geet download`. A song read off a file has no catalogue entry, and
+// Track.URL would build a Spotify link with an empty id.
+func trackRef(t spotify.Track) string {
+	if t.SourceURL == "" && t.ID == "" {
+		return ""
+	}
+	return t.URL()
+}
+
+// readControls turns the lines a front end writes to stdin into player
+// commands. An unreadable or closed stdin simply means no remote control:
+// `geet play --json </dev/null` must still play.
+func readControls(ctx context.Context, in io.Reader, p *tea.Program) {
+	if in == nil {
+		return
+	}
+	sc := bufio.NewScanner(in)
+	for sc.Scan() {
+		if ctx.Err() != nil {
+			return
+		}
+		if c, ok := parseControl(sc.Text()); ok {
+			p.Send(c)
+		}
+	}
+}
+
+// parseControl reads one command line: a verb, and a number for the two
+// that need one ("seek -10000", "seekto 62000", both in milliseconds).
+func parseControl(line string) (tui.Control, bool) {
+	fields := strings.Fields(strings.ToLower(strings.TrimSpace(line)))
+	if len(fields) == 0 {
+		return tui.Control{}, false
+	}
+	c := tui.Control{Action: fields[0]}
+	switch c.Action {
+	case "toggle", "play", "pause", "next", "prev", "save", "visualizer", "lyrics", "stop":
+		return c, true
+	case "seek", "seekto":
+		if len(fields) < 2 {
+			return tui.Control{}, false
+		}
+		ms, err := strconv.ParseInt(fields[1], 10, 64)
+		if err != nil {
+			return tui.Control{}, false
+		}
+		c.Value = ms
+		return c, true
+	}
+	return tui.Control{}, false
 }
 
 // playQueue turns what the user typed into files to play.
