@@ -126,7 +126,7 @@ Releases follow [Semantic Versioning](https://semver.org/), and the changes are 
 
 ```sh
 geet download <spotify-url>        # a track, album or playlist
-geet download <youtube-playlist>   # a YouTube or YouTube Music playlist
+geet download <youtube-link>       # a YouTube or YouTube Music song or playlist
 geet search <words…>               # find a song by name, pick it, download it
 geet play [words… | link]          # play your library (or a song), with a spectrum and lyrics
 geet trending                      # what people are playing now: pick one and listen
@@ -140,7 +140,8 @@ geet version
 Accepted links:
 - `https://open.spotify.com/{track|album|playlist}/<id>`, with or without `?si=…` or a `/intl-xx/` prefix
 - `spotify:{track|album|playlist}:<id>`
-- `https://music.youtube.com/playlist?list=<id>` or `https://www.youtube.com/playlist?list=<id>` (see below)
+- YouTube and YouTube Music songs: `https://music.youtube.com/watch?v=<id>`, `https://www.youtube.com/watch?v=<id>`, `https://youtu.be/<id>`, `https://www.youtube.com/shorts/<id>` (see below)
+- YouTube and YouTube Music playlists: `https://music.youtube.com/playlist?list=<id>` or `https://www.youtube.com/playlist?list=<id>`
 
 Share links from the Spotify app work as copied. Artist links aren't supported.
 
@@ -158,20 +159,23 @@ geet download "<url>" -v                             # debug logs, including eve
 
 Exit codes: `0` all tracks succeeded, `1` some failed (the others were saved), `2` fatal (bad link, missing tool, interrupted).
 
-### YouTube and YouTube Music playlists
+### YouTube and YouTube Music songs and playlists
 
 ```sh
-geet download "https://music.youtube.com/playlist?list=PL…"
+geet download "https://music.youtube.com/watch?v=…"          # one song
+geet download "https://music.youtube.com/playlist?list=PL…"   # a playlist
 ```
 
-A YouTube playlist has no song metadata, only video titles, so geet reads each title ("Artist - Song ft. X (Official Video)", "Artist | Song", or just the song on the artist's channel) and looks the song up in Deezer's and Apple's catalogs. Most songs come out tagged like any other download: album, year, track number, ISRC and the album cover. The audio is still matched the usual way, so an official audio upload is preferred over a music video with an intro. The playlist's own video is used only when nothing better is found.
+**A single song** downloads the exact video you linked. A song on YouTube Music carries its own title, artists, album and year, and those are used as they are. For any other video, the song is read from its title. The song is then looked up in the catalogs for the rest of the tags. A song link copied while a playlist was playing (`watch?v=…&list=…`) downloads just that song.
+
+**A playlist** has no song metadata, only video titles, so geet reads each title ("Artist - Song ft. X (Official Video)", "Artist | Song", or just the song on the artist's channel) and looks the song up in Deezer's and Apple's catalogs. Most songs come out tagged like any other download: album, year, track number, ISRC and the album cover. The audio is still matched the usual way, so an official audio upload is preferred over a music video with an intro. The playlist's own video is used only when nothing better is found.
 
 When neither catalog has the song (vlogs, unreleased tracks, songs the catalogs don't carry in your region), geet downloads the playlist's own video and tags it from the video title, with the video's thumbnail as the cover.
 
 - The whole playlist is read, with no 100-song limit, in a couple of seconds.
 - Songs are looked up as they reach the front of the queue, not all at once before the first download starts. Deezer is asked first, and Apple (which allows about 20 requests a minute) only for the songs Deezer doesn't have.
 - Re-running a playlist skips the songs already saved without looking any of them up again.
-- Private playlists need your YouTube sign-in (`youtube.cookies_from_browser`). A link to one song played from a playlist (`watch?v=…&list=…`) isn't accepted: copy the playlist's own link.
+- Private playlists need your YouTube sign-in (`youtube.cookies_from_browser`).
 
 ### Playlists over 100 songs
 

@@ -8,6 +8,10 @@ still change the CLI, the configuration or the `--json` output.
 ## [Unreleased]
 
 ### Added
+- **YouTube and YouTube Music song links download.** `watch?v=`,
+  `youtu.be/` and `shorts/` links download that exact video, named from
+  YouTube Music's own song metadata when it has some (else the title) and
+  tagged from the catalogs like a playlist song.
 - **YouTube and YouTube Music playlists download.** `geet download
   "https://music.youtube.com/playlist?list=…"` reads the whole playlist
   (no 100-song limit), names each song from its video title, and looks it

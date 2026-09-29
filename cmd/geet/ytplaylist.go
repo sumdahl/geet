@@ -18,23 +18,35 @@ import (
 	"github.com/sumdahl/geet/internal/ytdlp"
 )
 
-// readYouTubePlaylist lists a YouTube or YouTube Music playlist. Its songs
-// carry only what the video titles say; each is looked up in the catalogs
-// as it reaches the resolve stage (songFinder), so downloads start at once
-// instead of after a lookup per song.
-func readYouTubePlaylist(ctx context.Context, cfg config.Config, rep *reporter, link string) (spotify.Collection, error) {
+// readYouTube reads a YouTube or YouTube Music link: a playlist, or one
+// song. Its songs carry only what the videos say; each is looked up in the
+// catalogs as it reaches the resolve stage (songFinder), so downloads start
+// at once instead of after a lookup per song.
+func readYouTube(ctx context.Context, cfg config.Config, rep *reporter, link string) (spotify.Collection, error) {
 	src, err := ytdlp.CookieSource(cfg.YouTube.CookiesFromBrowser, ytdlp.SystemProbes())
 	if err != nil {
 		return spotify.Collection{}, err
 	}
-	ph := rep.ui.phase("Reading playlist from YouTube")
-	defer ph.finish()
-	return youtube.New(youtube.Options{YtDlp: ytdlp.Runner{
+	yt := youtube.New(youtube.Options{YtDlp: ytdlp.Runner{
 		Binary:             cfg.Tools.YtDlp,
 		CookiesFile:        cfg.YouTube.CookiesFile,
 		CookiesFromBrowser: src,
 		ExtraArgs:          cfg.YouTube.ExtraArgs,
-	}}).Playlist(ctx, link)
+	}})
+	if _, ok := youtube.PlaylistID(link); ok {
+		ph := rep.ui.phase("Reading playlist from YouTube")
+		defer ph.finish()
+		return yt.Playlist(ctx, link)
+	}
+	ph := rep.ui.phase("Reading song from YouTube")
+	defer ph.finish()
+	return yt.Video(ctx, link)
+}
+
+func isYouTube(link string) bool {
+	_, playlist := youtube.PlaylistID(link)
+	_, song := youtube.VideoID(link)
+	return playlist || song
 }
 
 // songFinder puts a name to a playlist video: the catalog entry for the
