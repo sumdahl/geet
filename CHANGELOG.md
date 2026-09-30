@@ -7,11 +7,9 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-30
+
 ### Added
-- **YouTube and YouTube Music song links download.** `watch?v=`,
-  `youtu.be/` and `shorts/` links download that exact video, named from
-  YouTube Music's own song metadata when it has some (else the title) and
-  tagged from the catalogs like a playlist song.
 - **YouTube and YouTube Music playlists download.** `geet download
   "https://music.youtube.com/playlist?list=…"` reads the whole playlist
   (no 100-song limit), names each song from its video title, and looks it
@@ -19,15 +17,10 @@ still change the CLI, the configuration or the `--json` output.
   has is downloaded from the playlist's own video and tagged from its
   title. The lookups run in the resolve stage, so downloads start right
   away, and a re-run skips saved songs without looking them up.
-
-### Fixed
-- `geet play --json` reports a failed lyrics lookup as a `lyrics` event with
-  an `error`, so a front end stops showing "looking…" when LRCLIB times out.
-- geet's mpv could be sent SIGTERM mid-song: Linux delivers the
-  parent-death signal when the starting *thread* exits, and Go may retire
-  threads. mpv is now started from a thread held until mpv is reaped.
-
-### Added
+- **YouTube and YouTube Music song links download.** `watch?v=`,
+  `youtu.be/` and `shorts/` links download that exact video, named from
+  YouTube Music's own song metadata when it has some (else the title) and
+  tagged from the catalogs like a playlist song.
 - **`geet play --json` is a full player a front end can drive.** It reads
   commands on stdin (`toggle`, `play`, `pause`, `next`, `prev`, `seek <ms>`,
   `seekto <ms>`, `save`, `visualizer`, `lyrics`, `stop`) and reports
@@ -48,7 +41,11 @@ still change the CLI, the configuration or the `--json` output.
   of which pick whichever player says it is playing.
 - mpv is no longer left running when geet is killed rather than closed (a
   shell restart, SIGKILL): on Linux it is asked to die with its parent. A
-  leftover `--idle` mpv went on playing with nothing to control it.
+  leftover `--idle` mpv went on playing with nothing to control it. The
+  signal is tied to the thread that started mpv, which is now held until
+  mpv is reaped, so Go retiring a thread can't stop a song midway.
+- `geet play --json` reports a failed lyrics lookup as a `lyrics` event with
+  an `error`, so a front end stops showing "looking…" when LRCLIB times out.
 - **`geet trending --limit` was ignored for six hours after the first run.**
   A cached chart was served whatever its length, so asking for fifty songs
   kept returning the twenty already on disk — from a front end with a
@@ -410,7 +407,8 @@ First release.
   YouTube. Ctrl+C leaves no partial files, and re-running resumes.
 - `geet version` shows the release, commit and date.
 
-[Unreleased]: https://github.com/sumdahl/geet/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/sumdahl/geet/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/sumdahl/geet/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/sumdahl/geet/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/sumdahl/geet/compare/v0.4.6...v0.5.0
 [0.4.6]: https://github.com/sumdahl/geet/compare/v0.4.5...v0.4.6
