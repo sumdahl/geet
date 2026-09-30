@@ -44,6 +44,7 @@ type Config struct {
 	OutputTemplate     string   `toml:"output_template" json:"output_template"`
 	PlaylistFolder     bool     `toml:"playlist_folder" json:"playlist_folder"`
 	Lyrics             bool     `toml:"lyrics" json:"lyrics"`
+	WorkDir            string   `toml:"work_dir" json:"work_dir"`
 	PlaylistFolderCase string   `toml:"playlist_folder_case" json:"playlist_folder_case"`
 	Format             string   `toml:"format" json:"format"`
 	Bitrate            string   `toml:"bitrate" json:"bitrate"`
@@ -222,7 +223,7 @@ func Load(path string, flags map[string]string) (Config, error) {
 			return Config{}, err
 		}
 	}
-	for _, p := range []*string{&cfg.Output, &cfg.IndexPath, &cfg.YouTube.CookiesFile, &cfg.Tools.YtDlp, &cfg.Tools.FFmpeg, &cfg.Tools.FFprobe, &cfg.Tools.WlPaste, &cfg.Tools.NotifySend} {
+	for _, p := range []*string{&cfg.Output, &cfg.IndexPath, &cfg.WorkDir, &cfg.YouTube.CookiesFile, &cfg.Tools.YtDlp, &cfg.Tools.FFmpeg, &cfg.Tools.FFprobe, &cfg.Tools.WlPaste, &cfg.Tools.NotifySend} {
 		if *p, err = ExpandHome(*p); err != nil {
 			return Config{}, err
 		}

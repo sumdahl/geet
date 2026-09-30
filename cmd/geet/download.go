@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/sumdahl/geet/internal/audio"
@@ -457,11 +459,16 @@ func runDownload(ctx context.Context, cfg config.Config, rep *reporter, col spot
 	}
 	// Per-track work dirs go inside one run dir in the library, so finished
 	// files rename into place atomically and one RemoveAll cleans up even
-	// after Ctrl+C.
+	// after Ctrl+C. work_dir moves them elsewhere: Android's shared Music
+	// folder refuses files that aren't audio (yt-dlp's .webm and .part).
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return res, err
 	}
-	if d.work, err = os.MkdirTemp(root, ".geet-"); err != nil {
+	workBase := cmp.Or(cfg.WorkDir, root)
+	if err := os.MkdirAll(workBase, 0o755); err != nil {
+		return res, err
+	}
+	if d.work, err = os.MkdirTemp(workBase, ".geet-"); err != nil {
 		return res, err
 	}
 	defer os.RemoveAll(d.work)
@@ -856,7 +863,13 @@ func (d *downloader) tag(ctx context.Context, j *trackJob) (*trackJob, bool, err
 	if err := os.MkdirAll(filepath.Dir(j.dest), 0o755); err != nil {
 		return j, false, err
 	}
-	if err := os.Rename(out, j.dest); err != nil {
+	if err := os.Rename(out, j.dest); errors.Is(err, syscall.EXDEV) {
+		// work_dir is on another filesystem than the library.
+		_, err = index.Place(out, j.dest, true)
+		if err != nil {
+			return j, false, err
+		}
+	} else if err != nil {
 		return j, false, err
 	}
 	d.remember(ctx, j.t, j.dest)
