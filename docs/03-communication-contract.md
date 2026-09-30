@@ -39,6 +39,7 @@ as a stable API even before the plugin exists.
   | `linked` | with `duplicate_of`: `true` = hard link (no extra disk space), absent = copy |
   | `warning` | `done`, when the requested format/bitrate can't beat YouTube's source (FLAC, or a bitrate >10% above it) |
   | `step` | `reading` only: `index` (first run: scanning existing downloads), `spotify` (reading a playlist's tracks), `tags` (Deezer lookups); `index`/`total` count items done |
+  | `lyrics_path` | `done`, when the song's lyrics were saved beside it as a `.lrc` file (setting `lyrics`, on by default; they're also in the file's own tags) |
   | `progress` | repeated `downloading` events, one per 10% step: `0.1` … `1` (the first `downloading` event has none) |
 
   Tracks are processed concurrently, so events of different tracks
@@ -133,10 +134,29 @@ The plugin configures the engine without touching its internals:
 - Persistent: write `~/.config/geet/config.toml` (TOML, keys as listed
   by `geet config settings --json`).
 - Discovery: `geet config settings --json` returns an array of
-  `{"key","flag","env","type","default","value","secret","usage"}`, with
-  `type` one of `string|int|duration|list`; `geet config --json`
+  `{"key","flag","env","type","default","value","secret","usage","choices"}`,
+  with `type` one of `string|bool|int|duration|list`, and `choices` (only on
+  settings that are one of a list, such as `format`) the allowed values; `geet config --json`
   returns the effective config as one object. Secrets come back as
   `"<redacted>"`.
+
+## Link preview (`geet info <link> --json`)
+What a link is, before anything downloads: one JSON object. It's cheap, since it reads one
+Spotify embed page (about 0.5 s) rather than a page per song.
+```json
+{"kind":"playlist","source":"spotify","name":"Daily Mix 1","cover_url":"https://…",
+ "total":50,"tracks":[{"ref":"https://open.spotify.com/track/…","title":"…","artists":["…"],
+ "duration_ms":200046,"explicit":true,"cover_url":"https://…"}]}
+```
+- `kind` is `track`, `album` or `playlist`, and `source` is `spotify`, `youtube`, `apple` or `deezer`.
+- `total` counts every song, and can be more than `tracks` lists: Spotify's page shows a playlist's first 100.
+- For a Spotify link, tracks carry no album or year; those are read when downloading.
+
+## Lyrics (`geet lyrics <file> --json`)
+Finds a saved song's lyrics from its tags, writes `<name>.lrc` beside it, and prints
+`{"path","lrc_path","synced","lines":[{"at_ms","text"}]}`. It's for songs saved before
+the `lyrics` setting, or whose lookup failed at download time. Having no lyrics
+is ordinary: `lines` is empty and the exit code is 1.
 
 ## Search (`geet search <words…> --json`)
 Prints one JSON array (not NDJSON) of ranked results and downloads nothing:

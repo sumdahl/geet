@@ -404,6 +404,7 @@ func checkYouTube(ctx context.Context, cfg config.Config) Check {
 	yt := youtube.New(youtube.Options{
 		YtDlp: ytdlp.Runner{
 			Binary:             cfg.Tools.YtDlp,
+			Prefix:             cfg.Tools.YtDlpArgs,
 			CookiesFile:        cfg.YouTube.CookiesFile,
 			CookiesFromBrowser: cfg.YouTube.CookiesFromBrowser,
 			ExtraArgs:          cfg.YouTube.ExtraArgs,
@@ -426,6 +427,7 @@ func checkYouTube(ctx context.Context, cfg config.Config) Check {
 	// details, which runs the same checks as a download but saves nothing.
 	runner := ytdlp.Runner{
 		Binary:             cfg.Tools.YtDlp,
+		Prefix:             cfg.Tools.YtDlpArgs,
 		CookiesFile:        cfg.YouTube.CookiesFile,
 		CookiesFromBrowser: cfg.YouTube.CookiesFromBrowser,
 		ExtraArgs:          cfg.YouTube.ExtraArgs,

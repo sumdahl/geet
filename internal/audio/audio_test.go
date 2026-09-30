@@ -227,3 +227,32 @@ func TestQualityWarning(t *testing.T) {
 		}
 	}
 }
+
+// Lyrics go into the file's own tags, where players look: a LYRICS comment
+// in opus and flac, USLT in mp3. Multi-line text must survive intact.
+func TestEncodeLyrics(t *testing.T) {
+	requireTools(t)
+	src := makeSource(t)
+	const lrc = "[00:01.00]first line\n[00:02.50]second; with = signs #\n"
+	for _, format := range []string{"opus", "flac", "mp3"} {
+		t.Run(format, func(t *testing.T) {
+			dest := filepath.Join(t.TempDir(), "out."+format)
+			err := Encode(context.Background(), "ffmpeg", Job{
+				Source: src, SourceCodec: "opus", Dest: dest, Format: format,
+				Track: spotify.Track{Title: "T", Artists: []string{"A"}}, Lyrics: lrc,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got string
+			for k, v := range ffprobe(t, dest).tags() {
+				if strings.HasPrefix(k, "lyrics") {
+					got = v
+				}
+			}
+			if strings.TrimSpace(got) != strings.TrimSpace(lrc) {
+				t.Fatalf("lyrics tag = %q, want %q", got, lrc)
+			}
+		})
+	}
+}

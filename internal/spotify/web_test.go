@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -28,13 +29,14 @@ func unpaced(w *Web) *Web {
 func newTestWeb(t *testing.T) *Web {
 	t.Helper()
 	routes := map[string]string{
-		"/embed/album/alb":     "embed_album.html",
-		"/embed/album/alb2":    "embed_album2.html",
-		"/embed/playlist/pl":   "embed_playlist.html",
-		"/embed/playlist/void": "embed_empty.html",
-		"/track/t1":            "page_t1.html",
-		"/track/t2":            "page_t2.html",
-		"/track/tx":            "page_tx.html",
+		"/embed/album/alb":                    "embed_album.html",
+		"/embed/album/alb2":                   "embed_album2.html",
+		"/embed/playlist/pl":                  "embed_playlist.html",
+		"/embed/track/3XtbtOMVVBooqbcGz8UErp": "embed_track.html",
+		"/embed/playlist/void":                "embed_empty.html",
+		"/track/t1":                           "page_t1.html",
+		"/track/t2":                           "page_t2.html",
+		"/track/tx":                           "page_tx.html",
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Spotify only renders the music:* tags for crawlers; mirror that so
@@ -380,5 +382,25 @@ func TestFromSongPageRealPage(t *testing.T) {
 		CoverURL: "https://i.scdn.co/image/ab67616d0000b273d28d2ebdedb220e479743797", TrackNumber: 5, Year: 2012, Duration: 386906 * time.Millisecond, Explicit: true}
 	if !ok || !reflect.DeepEqual(got, want) {
 		t.Errorf("ok %v\ngot  %+v\nwant %+v", ok, got, want)
+	}
+}
+
+func TestWebPreview(t *testing.T) {
+	w := newTestWeb(t)
+	pl, err := w.Preview(context.Background(), Ref{Kind: KindPlaylist, ID: "pl"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pl.Name != "Mix" || len(pl.Tracks) == 0 || pl.Tracks[0].Title != "Two" ||
+		!slices.Equal(pl.Tracks[0].Artists, []string{"Beta", "Tyler, The Creator"}) || pl.Tracks[0].Duration != 122500*time.Millisecond {
+		t.Fatalf("playlist preview = %+v", pl)
+	}
+	tr, err := w.Preview(context.Background(), Ref{Kind: KindTrack, ID: "3XtbtOMVVBooqbcGz8UErp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tr.Tracks) != 1 || tr.Tracks[0].Title != "Monkeys Spinning Monkeys" || tr.Tracks[0].Artists[0] != "Kevin MacLeod" ||
+		tr.Tracks[0].Duration != 125*time.Second || tr.Tracks[0].CoverURL == "" {
+		t.Fatalf("track preview = %+v", tr)
 	}
 }

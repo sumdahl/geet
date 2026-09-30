@@ -7,6 +7,23 @@ still change the CLI, the configuration or the `--json` output.
 
 ## [Unreleased]
 
+### Added
+- **Lyrics are saved with every song.** They're embedded in the file's tags
+  (a `LYRICS` comment in opus and flac, `USLT` in mp3, where players look)
+  and written beside it as `<name>.lrc`, synced when LRCLIB has timings.
+  They're fetched alongside the cover, so downloads take no longer.
+  `lyrics = false` turns it off. `done` events carry `lyrics_path`.
+- `geet lyrics <file>` saves a downloaded song's lyrics beside it, for songs
+  saved before this release.
+- `geet info <link> --json` says what a link is (name, cover, songs) without
+  downloading. A Spotify link costs one page read, about half a second.
+- `geet config settings --json` lists `choices` for settings that are one of
+  a list (`format`, `duplicates`, …), so a front end can offer a picker.
+- `tools.yt_dlp_args` puts arguments before all others when running yt-dlp,
+  so yt-dlp can run as a zipapp under Python (as on Android).
+- `scripts/build-android.sh` builds geet for Android (arm64-v8a,
+  armeabi-v7a, x86_64) with the NDK, for the Geet Android app.
+
 ## [0.7.0] - 2026-09-30
 
 ### Added

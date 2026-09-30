@@ -2,6 +2,7 @@
 package lyrics
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,6 +21,22 @@ type Line struct {
 type Lyrics struct {
 	Lines  []Line
 	Synced bool
+}
+
+// LRC writes the lyrics back out as an LRC file: "[mm:ss.xx]text" lines
+// when synced, plain lines otherwise. It's what a music player reads from
+// a .lrc file next to the song.
+func (l Lyrics) LRC() string {
+	var b strings.Builder
+	for _, line := range l.Lines {
+		if l.Synced {
+			cs := line.At.Milliseconds() / 10
+			fmt.Fprintf(&b, "[%02d:%02d.%02d]", cs/6000, cs/100%60, cs%100)
+		}
+		b.WriteString(line.Text)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 // Empty reports whether there is nothing to show. Plenty of songs have no

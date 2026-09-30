@@ -15,7 +15,10 @@ type Setting struct {
 	Key    string // dotted TOML key, e.g. "youtube.search_results"
 	Usage  string
 	Secret bool
-	ptr    any
+	// Choices are the only values allowed, for a setting that is one of
+	// a list; empty for free-form ones.
+	Choices []string
+	ptr     any
 }
 
 // Settings lists every setting, pointing into c.
@@ -23,14 +26,15 @@ func (c *Config) Settings() []Setting {
 	return []Setting{
 		{Key: "output", Usage: "music library directory", ptr: &c.Output},
 		{Key: "output_template", Usage: "file path under output, without extension; placeholders: " + libraryPlaceholders(), ptr: &c.OutputTemplate},
+		{Key: "lyrics", Usage: "save each song's lyrics (synced when available, from LRCLIB) in its tags and a .lrc file next to it", ptr: &c.Lyrics},
 		{Key: "playlist_folder", Usage: "put a playlist's tracks in a folder named after it, inside output", ptr: &c.PlaylistFolder},
-		{Key: "playlist_folder_case", Usage: "playlist folder letter case: lower (road-trip-mix), capitalize (Road-trip-mix) or title (Road-Trip-Mix)", ptr: &c.PlaylistFolderCase},
-		{Key: "format", Usage: "audio format: opus, flac or mp3", ptr: &c.Format},
+		{Key: "playlist_folder_case", Choices: library.FolderCases, Usage: "playlist folder letter case: lower (road-trip-mix), capitalize (Road-trip-mix) or title (Road-Trip-Mix)", ptr: &c.PlaylistFolderCase},
+		{Key: "format", Choices: formats, Usage: "audio format: opus, flac or mp3", ptr: &c.Format},
 		{Key: "bitrate", Usage: `audio bitrate such as 320k; empty means best available`, ptr: &c.Bitrate},
 		{Key: "overwrite", Usage: "re-download tracks whose file already exists instead of skipping them", ptr: &c.Overwrite},
-		{Key: "duplicates", Usage: "a track already downloaded elsewhere (another playlist, or the same recording on another release): link (hard link, no extra space), copy, skip, or download again", ptr: &c.Duplicates},
+		{Key: "duplicates", Choices: duplicateModes, Usage: "a track already downloaded elsewhere (another playlist, or the same recording on another release): link (hard link, no extra space), copy, skip, or download again", ptr: &c.Duplicates},
 		{Key: "index_path", Usage: "file remembering every downloaded track, for duplicates (default $XDG_DATA_HOME/geet/index.json)", ptr: &c.IndexPath},
-		{Key: "progress", Usage: "animated progress bars: auto (only in a terminal, and not with --json), always or never", ptr: &c.Progress},
+		{Key: "progress", Choices: progressAnswers, Usage: "animated progress bars: auto (only in a terminal, and not with --json), always or never", ptr: &c.Progress},
 		{Key: "download_retries", Usage: "extra attempts when a YouTube download fails (it is often a temporary 403 or throttling)", ptr: &c.DownloadRetries},
 		{Key: "jobs", Usage: "concurrent downloads", ptr: &c.Jobs},
 		{Key: "resolve_jobs", Usage: "songs read from Spotify and looked up on YouTube at once; higher reads big playlists faster but makes Spotify rate-limit sooner", ptr: &c.ResolveJobs},
@@ -48,9 +52,9 @@ func (c *Config) Settings() []Setting {
 		{Key: "youtube.extra_args", Usage: "extra yt-dlp arguments, space-separated", ptr: &c.YouTube.ExtraArgs},
 		{Key: "search.country", Usage: "iTunes store that geet search looks in (two letters, e.g. US, GB, IN)", ptr: &c.Search.Country},
 		{Key: "search.limit", Usage: "search results offered to pick from", ptr: &c.Search.Limit},
-		{Key: "search.picker", Usage: "how search results are picked: auto (fzf if installed), fzf or list (numbered prompt)", ptr: &c.Search.Picker},
+		{Key: "search.picker", Choices: pickers, Usage: "how search results are picked: auto (fzf if installed), fzf or list (numbered prompt)", ptr: &c.Search.Picker},
 		{Key: "search.confirm", Usage: "ask before downloading songs picked from the search menu (--pick never asks)", ptr: &c.Search.Confirm},
-		{Key: "player.engine", Usage: "what geet play uses for audio: auto (mpv when installed, else ffplay), mpv or ffplay. Only mpv can seek and report an exact position, which synced lyrics need", ptr: &c.Player.Engine},
+		{Key: "player.engine", Choices: playerEngines, Usage: "what geet play uses for audio: auto (mpv when installed, else ffplay), mpv or ffplay. Only mpv can seek and report an exact position, which synced lyrics need", ptr: &c.Player.Engine},
 		{Key: "player.stream", Usage: "play a song that isn't downloaded straight from YouTube, so it starts in seconds; \"d\" while it plays keeps a proper copy. Off downloads first, as before", ptr: &c.Player.Stream},
 		{Key: "player.visualizer", Usage: "show the spectrum beside the song while it plays", ptr: &c.Player.Visualizer},
 		{Key: "player.lyrics", Usage: "look up synced lyrics (LRCLIB) and follow them while the song plays; songs without lyrics simply show none", ptr: &c.Player.Lyrics},
@@ -58,11 +62,12 @@ func (c *Config) Settings() []Setting {
 		{Key: "player.repeat", Usage: "start the queue again when it ends instead of quitting", ptr: &c.Player.Repeat},
 		{Key: "player.mpv", Usage: "mpv executable, used by geet play", ptr: &c.Player.MPV},
 		{Key: "player.ffplay", Usage: "ffplay executable (ships with ffmpeg), the fallback player", ptr: &c.Player.FFplay},
-		{Key: "trending.source", Usage: "where geet trending reads the chart: auto (Deezer, topped up from Apple), deezer (localised by your connection) or apple (your search.country store)", ptr: &c.Trending.Source},
+		{Key: "trending.source", Choices: trendingSources, Usage: "where geet trending reads the chart: auto (Deezer, topped up from Apple), deezer (localised by your connection) or apple (your search.country store)", ptr: &c.Trending.Source},
 		{Key: "trending.cache_for", Usage: "how long a chart is kept before geet reads it again; charts move slowly, and this keeps the panel instant", ptr: &c.Trending.CacheFor},
 		{Key: "watch.interval", Usage: "how often geet watch checks the clipboard for a new link", ptr: &c.Watch.Interval},
 		{Key: "watch.notify", Usage: "geet watch shows a desktop notification (with the cover) when a link starts, finishes or fails", ptr: &c.Watch.Notify},
 		{Key: "tools.yt_dlp", Usage: "yt-dlp executable", ptr: &c.Tools.YtDlp},
+		{Key: "tools.yt_dlp_args", Usage: "arguments before all others when running yt-dlp, space-separated: the yt-dlp zipapp when tools.yt_dlp is a Python interpreter", ptr: &c.Tools.YtDlpArgs},
 		{Key: "tools.ffmpeg", Usage: "ffmpeg executable", ptr: &c.Tools.FFmpeg},
 		{Key: "tools.ffprobe", Usage: "ffprobe executable, used to index a library downloaded before the index existed", ptr: &c.Tools.FFprobe},
 		{Key: "tools.wl_paste", Usage: "wl-paste executable (wl-clipboard), which geet watch reads the clipboard with", ptr: &c.Tools.WlPaste},

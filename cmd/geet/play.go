@@ -435,6 +435,7 @@ func newStreamer(cfg config.Config) *player.Streamer {
 	}
 	runner := ytdlp.Runner{
 		Binary:             cfg.Tools.YtDlp,
+		Prefix:             cfg.Tools.YtDlpArgs,
 		CookiesFile:        cfg.YouTube.CookiesFile,
 		CookiesFromBrowser: cfg.YouTube.CookiesFromBrowser,
 		ExtraArgs:          cfg.YouTube.ExtraArgs,
