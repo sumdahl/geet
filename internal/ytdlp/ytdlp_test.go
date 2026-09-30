@@ -145,3 +145,15 @@ func TestRunUnplayable(t *testing.T) {
 		})
 	}
 }
+
+// On Android yt-dlp is a zipapp run by Python: the zip must come first.
+func TestPrefixComesFirst(t *testing.T) {
+	r := Runner{Binary: "echo", Prefix: []string{"yt-dlp.zip"}, CookiesFile: "c.txt", ExtraArgs: []string{"--x"}}
+	out, err := r.Run(context.Background(), "--dump-json", "url")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(out)); got != "yt-dlp.zip --cookies c.txt --x --dump-json url" {
+		t.Fatalf("args = %q", got)
+	}
+}

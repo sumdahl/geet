@@ -37,6 +37,7 @@ type Job struct {
 	Bitrate     string // e.g. "192k"; empty for the format's best
 	Track       spotify.Track
 	Cover       []byte // may be nil
+	Lyrics      string // LRC or plain text; may be empty
 }
 
 // Encode writes job.Dest directly; callers that need the final file to
@@ -178,6 +179,9 @@ func ffmetadata(job Job) []byte {
 	if t.ID != "" {
 		put("comment", t.URL())
 	}
+	// ffmpeg writes this as a LYRICS Vorbis comment (opus, flac) and as
+	// USLT in an mp3, which is where players look.
+	put("lyrics", job.Lyrics)
 	if job.Format == "opus" && len(job.Cover) > 0 {
 		put("METADATA_BLOCK_PICTURE", pictureBlock(job.Cover))
 	}

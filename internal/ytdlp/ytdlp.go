@@ -91,7 +91,10 @@ func BotCheckAdvice(cookieSource string, err error) string {
 }
 
 type Runner struct {
-	Binary             string
+	Binary string
+	// Prefix comes before every other argument: the yt-dlp zipapp when
+	// Binary is a Python interpreter, as on Android.
+	Prefix             []string
 	CookiesFile        string
 	CookiesFromBrowser string
 	ExtraArgs          []string
@@ -113,7 +116,8 @@ func (r Runner) Run(ctx context.Context, args ...string) ([]byte, error) {
 // yt-dlp's last stderr line, which is where it explains itself ("Sign in to
 // confirm you're not a bot", "Video unavailable").
 func (r Runner) RunLines(ctx context.Context, onLine func(string), args ...string) error {
-	full := make([]string, 0, len(args)+len(r.ExtraArgs)+2)
+	full := make([]string, 0, len(r.Prefix)+len(args)+len(r.ExtraArgs)+2)
+	full = append(full, r.Prefix...)
 	switch {
 	case r.CookiesFile != "":
 		full = append(full, "--cookies", r.CookiesFile)

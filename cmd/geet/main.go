@@ -49,6 +49,8 @@ commands:
   download <link>          download a Spotify track, album or playlist
                            (also Apple Music and Deezer song links, and the
                            itunes:<id> / deezer:<id> refs geet search prints)
+  info <link>              what a link is (name, cover, songs), without downloading
+  lyrics <file>            save a downloaded song's lyrics beside it (.lrc)
   search <words…>          find a song by name, pick it from a menu, download it
   play [words… | link]     play your library, or a song you name, with a
                            spectrum and synced lyrics (no argument: everything)
@@ -84,6 +86,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return downloadCmd(ctx, args[1:], stdout, stderr)
 	case "search":
 		return searchCmd(ctx, args[1:], stdout, stderr)
+	case "info":
+		return infoCmd(ctx, args[1:], stdout, stderr)
+	case "lyrics":
+		return lyricsCmd(ctx, args[1:], stdout, stderr)
 	case "play":
 		return playCmd(ctx, args[1:], stdout, stderr)
 	case "trending":
@@ -580,18 +586,19 @@ func printSettings(w io.Writer, cfg config.Config, asJSON bool) error {
 
 	if asJSON {
 		type entry struct {
-			Key     string `json:"key"`
-			Flag    string `json:"flag"`
-			Env     string `json:"env"`
-			Type    string `json:"type"`
-			Default string `json:"default"`
-			Value   string `json:"value"`
-			Secret  bool   `json:"secret"`
-			Usage   string `json:"usage"`
+			Key     string   `json:"key"`
+			Flag    string   `json:"flag"`
+			Env     string   `json:"env"`
+			Type    string   `json:"type"`
+			Default string   `json:"default"`
+			Value   string   `json:"value"`
+			Secret  bool     `json:"secret"`
+			Usage   string   `json:"usage"`
+			Choices []string `json:"choices,omitempty"`
 		}
 		out := make([]entry, len(cur))
 		for i, s := range cur {
-			out[i] = entry{s.Key, "--" + s.Flag(), s.Env(), s.Type(), defs[i].String(), value(s), s.Secret, s.Usage}
+			out[i] = entry{s.Key, "--" + s.Flag(), s.Env(), s.Type(), defs[i].String(), value(s), s.Secret, s.Usage, s.Choices}
 		}
 		return writeJSON(w, out)
 	}

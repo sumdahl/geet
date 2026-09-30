@@ -417,6 +417,45 @@ func (w *Web) PlaylistSize(ctx context.Context, id string) (int, error) {
 	return 0, fmt.Errorf("playlist %s: no item count: %w", id, ErrPageFormat)
 }
 
+// Preview reads what a link is from one embed page, without reading each
+// song's own page: the name, the cover and the songs as the page lists them
+// (title, artists, length, explicit; no album or year). It's what a front end
+// shows before anything downloads, so it has to be fast.
+func (w *Web) Preview(ctx context.Context, ref Ref) (Collection, error) {
+	e, err := w.embed(ctx, ref.Kind, ref.ID)
+	if err != nil {
+		return Collection{}, err
+	}
+	col := Collection{Ref: ref, Name: e.Name}
+	items := e.TrackList
+	if ref.Kind == KindTrack {
+		names := make([]string, len(e.Artists))
+		for i, a := range e.Artists {
+			names[i] = a.Name
+		}
+		items = []embedItem{{Title: e.Name, Subtitle: strings.Join(names, embedArtistSep), Duration: e.Duration, IsExplicit: e.IsExplicit, URI: "spotify:track:" + ref.ID}}
+	}
+	for _, it := range items {
+		if it.EntityType != "" && it.EntityType != "track" {
+			continue
+		}
+		col.Tracks = append(col.Tracks, Track{
+			ID:       itemID(it),
+			Title:    it.Title,
+			Artists:  strings.Split(it.Subtitle, embedArtistSep),
+			Duration: time.Duration(it.Duration) * time.Millisecond,
+			Explicit: it.IsExplicit,
+			CoverURL: e.cover(),
+		})
+	}
+	if ref.Kind == KindPlaylist && len(e.TrackList) >= embedPlaylistCap {
+		if n, err := w.PlaylistSize(ctx, ref.ID); err == nil && n > len(col.Tracks) {
+			col.Total = n
+		}
+	}
+	return col, nil
+}
+
 // Name returns an album's or playlist's name from its public page, without
 // reading its tracks.
 func (w *Web) Name(ctx context.Context, ref Ref) (string, error) {
@@ -481,8 +520,14 @@ type embedImage struct {
 }
 
 type embedEntity struct {
-	Name           string      `json:"name"`
-	Subtitle       string      `json:"subtitle"`
+	Name     string `json:"name"`
+	Subtitle string `json:"subtitle"`
+	// A track's own embed describes the track, with no list.
+	Duration   int  `json:"duration"`
+	IsExplicit bool `json:"isExplicit"`
+	Artists    []struct {
+		Name string `json:"name"`
+	} `json:"artists"`
 	TrackList      []embedItem `json:"trackList"`
 	VisualIdentity struct {
 		Image []embedImage `json:"image"`

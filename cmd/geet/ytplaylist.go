@@ -29,6 +29,7 @@ func readYouTube(ctx context.Context, cfg config.Config, rep *reporter, link str
 	}
 	yt := youtube.New(youtube.Options{YtDlp: ytdlp.Runner{
 		Binary:             cfg.Tools.YtDlp,
+		Prefix:             cfg.Tools.YtDlpArgs,
 		CookiesFile:        cfg.YouTube.CookiesFile,
 		CookiesFromBrowser: src,
 		ExtraArgs:          cfg.YouTube.ExtraArgs,

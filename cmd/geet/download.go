@@ -24,6 +24,7 @@ import (
 	"github.com/sumdahl/geet/internal/index"
 	"github.com/sumdahl/geet/internal/itunes"
 	"github.com/sumdahl/geet/internal/library"
+	"github.com/sumdahl/geet/internal/lyrics"
 	"github.com/sumdahl/geet/internal/pipeline"
 	"github.com/sumdahl/geet/internal/spotify"
 	"github.com/sumdahl/geet/internal/youtube"
@@ -33,18 +34,21 @@ import (
 // event is one NDJSON line of the --json contract (docs/03-communication-
 // contract.md). Fields are only ever added, never renamed or removed.
 type event struct {
-	Track      string  `json:"track"`
-	Stage      string  `json:"stage"`          // reading|resolved|downloading|tagging|done|failed
-	Step       string  `json:"step,omitempty"` // "reading" only: index, spotify, tags
-	Error      string  `json:"error,omitempty"`
-	Fatal      bool    `json:"fatal,omitempty"` // the whole run stopped, not just this track
-	SpotifyID  string  `json:"spotify_id,omitempty"`
-	Index      int     `json:"index,omitempty"` // 1-based position in the request
-	Total      int     `json:"total,omitempty"`
-	YouTubeURL string  `json:"youtube_url,omitempty"`
-	Path       string  `json:"path,omitempty"`
-	Skipped    bool    `json:"skipped,omitempty"` // done without downloading: the file already existed
-	Warning    string  `json:"warning,omitempty"`
+	Track      string `json:"track"`
+	Stage      string `json:"stage"`          // reading|resolved|downloading|tagging|done|failed
+	Step       string `json:"step,omitempty"` // "reading" only: index, spotify, tags
+	Error      string `json:"error,omitempty"`
+	Fatal      bool   `json:"fatal,omitempty"` // the whole run stopped, not just this track
+	SpotifyID  string `json:"spotify_id,omitempty"`
+	Index      int    `json:"index,omitempty"` // 1-based position in the request
+	Total      int    `json:"total,omitempty"`
+	YouTubeURL string `json:"youtube_url,omitempty"`
+	Path       string `json:"path,omitempty"`
+	Skipped    bool   `json:"skipped,omitempty"` // done without downloading: the file already existed
+	Warning    string `json:"warning,omitempty"`
+	// LyricsPath is set on "done" when the song's lyrics were saved beside
+	// it as a .lrc file (the lyrics setting).
+	LyricsPath string  `json:"lyrics_path,omitempty"`
 	Progress   float64 `json:"progress,omitempty"` // repeated "downloading" events: 0.1 … 1.0
 	// DuplicateOf is set on "done" when the track wasn't downloaded because
 	// this file already had it; Linked tells a hard link from a copy.
@@ -444,6 +448,9 @@ func runDownload(ctx context.Context, cfg config.Config, rep *reporter, col spot
 		return res, err
 	}
 	d := newDownloader(cfg, root, rep, idx)
+	if cfg.Lyrics {
+		d.lyr = lyrics.New()
+	}
 	d.ownVideo = strings.HasPrefix(ref.ID, youtube.RefPrefix)
 	if lateTags {
 		d.dz = deezer.New("")
@@ -516,6 +523,7 @@ type downloader struct {
 	yt   *youtube.Resolver
 	ytd  ytdlp.Runner
 	rep  *reporter
+	lyr  *lyrics.Client // nil when the lyrics setting is off
 	// finder names the songs of a YouTube link (songFinder).
 	finder *songFinder
 	// ownVideo downloads a YouTube song link's own video, even once a
@@ -531,6 +539,7 @@ type downloader struct {
 func newDownloader(cfg config.Config, root string, rep *reporter, idx *index.Index) *downloader {
 	ytd := ytdlp.Runner{
 		Binary:             cfg.Tools.YtDlp,
+		Prefix:             cfg.Tools.YtDlpArgs,
 		CookiesFile:        cfg.YouTube.CookiesFile,
 		CookiesFromBrowser: cfg.YouTube.CookiesFromBrowser,
 		ExtraArgs:          cfg.YouTube.ExtraArgs,
@@ -817,17 +826,29 @@ func (d *downloader) noticeSignIn() {
 func (d *downloader) tag(ctx context.Context, j *trackJob) (*trackJob, bool, error) {
 	defer os.RemoveAll(j.work)
 	d.emit(j, "tagging")
+	// Both are network round trips; neither needs the other.
+	var lyr lyrics.Lyrics
+	var wg sync.WaitGroup
+	if d.lyr != nil {
+		wg.Go(func() {
+			var err error
+			if lyr, err = d.lyr.Fetch(ctx, j.t); err != nil && !errors.Is(err, lyrics.ErrNotFound) {
+				slog.DebugContext(ctx, "no lyrics", "track", j.ev.Track, "err", err)
+			}
+		})
+	}
 	cover, err := audio.FetchCover(ctx, j.t.CoverURL)
 	if err != nil {
 		slog.WarnContext(ctx, "no cover art", "track", j.ev.Track, "err", err)
 	}
+	wg.Wait()
 	out := filepath.Join(j.work, "out."+d.cfg.Format)
 	if j.cleanEdit != "" {
 		j.t.Title += " (Clean)"
 	}
 	err = audio.Encode(ctx, d.cfg.Tools.FFmpeg, audio.Job{
 		Source: j.src.Path, SourceCodec: j.src.Codec, Dest: out,
-		Format: d.cfg.Format, Bitrate: d.cfg.Bitrate, Track: j.t, Cover: cover,
+		Format: d.cfg.Format, Bitrate: d.cfg.Bitrate, Track: j.t, Cover: cover, Lyrics: lyr.LRC(),
 	})
 	if err != nil {
 		return j, false, err
@@ -839,6 +860,9 @@ func (d *downloader) tag(ctx context.Context, j *trackJob) (*trackJob, bool, err
 		return j, false, err
 	}
 	d.remember(ctx, j.t, j.dest)
+	if !lyr.Empty() {
+		j.ev.LyricsPath = saveLRC(ctx, j.dest, lyr)
+	}
 	j.ev.Warning = audio.QualityWarning(d.cfg.Format, d.cfg.Bitrate, j.src.Kbps, j.src.Codec)
 	if j.cleanEdit != "" {
 		warn := fmt.Sprintf("YouTube wouldn't serve the explicit version, so this is the clean edit (%q)", j.cleanEdit)
@@ -850,6 +874,18 @@ func (d *downloader) tag(ctx context.Context, j *trackJob) (*trackJob, bool, err
 	}
 	d.emit(j, "done")
 	return j, false, nil
+}
+
+// saveLRC writes lyrics beside the song as <name>.lrc, the name music
+// players look for, and returns its path; "" if it couldn't be written,
+// which never fails the download.
+func saveLRC(ctx context.Context, song string, lyr lyrics.Lyrics) string {
+	path := strings.TrimSuffix(song, filepath.Ext(song)) + ".lrc"
+	if err := os.WriteFile(path, []byte(lyr.LRC()), 0o644); err != nil {
+		slog.WarnContext(ctx, "couldn't save the lyrics", "path", path, "err", err)
+		return ""
+	}
+	return path
 }
 
 // reuse satisfies t from a file already downloaded under another name (the

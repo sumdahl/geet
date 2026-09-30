@@ -194,3 +194,15 @@ func TestSearchRejectsWrongRecording(t *testing.T) {
 		t.Fatalf("got %+v", got.Lines)
 	}
 }
+
+func TestLRCRoundTrip(t *testing.T) {
+	for _, in := range []string{
+		"[00:01.00]one\n[01:02.50]two\n[10:00.99]three\n",
+		"plain one\nplain two\n",
+	} {
+		l := ParseLRC(in)
+		if got := l.LRC(); got != in {
+			t.Errorf("LRC() = %q, want %q", got, in)
+		}
+	}
+}

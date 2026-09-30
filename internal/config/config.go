@@ -43,6 +43,7 @@ type Config struct {
 	Output             string   `toml:"output" json:"output"`
 	OutputTemplate     string   `toml:"output_template" json:"output_template"`
 	PlaylistFolder     bool     `toml:"playlist_folder" json:"playlist_folder"`
+	Lyrics             bool     `toml:"lyrics" json:"lyrics"`
 	PlaylistFolderCase string   `toml:"playlist_folder_case" json:"playlist_folder_case"`
 	Format             string   `toml:"format" json:"format"`
 	Bitrate            string   `toml:"bitrate" json:"bitrate"`
@@ -117,11 +118,12 @@ type Watch struct {
 }
 
 type Tools struct {
-	YtDlp      string `toml:"yt_dlp" json:"yt_dlp"`
-	FFmpeg     string `toml:"ffmpeg" json:"ffmpeg"`
-	FFprobe    string `toml:"ffprobe" json:"ffprobe"`
-	WlPaste    string `toml:"wl_paste" json:"wl_paste"`
-	NotifySend string `toml:"notify_send" json:"notify_send"`
+	YtDlp      string   `toml:"yt_dlp" json:"yt_dlp"`
+	YtDlpArgs  []string `toml:"yt_dlp_args" json:"yt_dlp_args"`
+	FFmpeg     string   `toml:"ffmpeg" json:"ffmpeg"`
+	FFprobe    string   `toml:"ffprobe" json:"ffprobe"`
+	WlPaste    string   `toml:"wl_paste" json:"wl_paste"`
+	NotifySend string   `toml:"notify_send" json:"notify_send"`
 }
 
 // Duration reads and writes as a Go duration string ("10s") in both TOML and
@@ -144,6 +146,7 @@ func Default() Config {
 		Output:             "~/Music",
 		OutputTemplate:     library.DefaultTemplate,
 		PlaylistFolder:     true,
+		Lyrics:             true,
 		PlaylistFolderCase: "lower",
 		Format:             "opus",
 		Progress:           "auto",
@@ -165,7 +168,7 @@ func Default() Config {
 		Player:   Player{Engine: "auto", Stream: true, Visualizer: true, Lyrics: true, MPV: "mpv", FFplay: "ffplay"},
 		Trending: Trending{Source: "auto", CacheFor: Duration{6 * time.Hour}},
 		Watch:    Watch{Interval: Duration{time.Second}, Notify: true},
-		Tools:    Tools{YtDlp: "yt-dlp", FFmpeg: "ffmpeg", FFprobe: "ffprobe", WlPaste: "wl-paste", NotifySend: "notify-send"},
+		Tools:    Tools{YtDlpArgs: []string{}, YtDlp: "yt-dlp", FFmpeg: "ffmpeg", FFprobe: "ffprobe", WlPaste: "wl-paste", NotifySend: "notify-send"},
 	}
 }
 

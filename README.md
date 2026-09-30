@@ -130,6 +130,8 @@ geet download <youtube-link>       # a YouTube or YouTube Music song or playlist
 geet search <words…>               # find a song by name, pick it, download it
 geet play [words… | link]          # play your library (or a song), with a spectrum and lyrics
 geet trending                      # what people are playing now: pick one and listen
+geet info <link>                   # what a link is (name, cover, songs) without downloading
+geet lyrics <file>                 # save a downloaded song's lyrics beside it (.lrc)
 geet doctor                        # health check: tools, setup, services, and how to fix problems
 geet config                        # effective configuration (TOML; --json for JSON)
 geet config path                   # where the config file lives
@@ -467,6 +469,7 @@ youtube.cookies_from_browser = "auto"
 |---|---|---|---|---|
 | `output` | `--output` | string | `~/Music` | Music library directory |
 | `output_template` | `--output-template` | string | `{title} - {artists}` | File path under `output`, without extension |
+| `lyrics` | `--lyrics` | bool | `true` | Save each song's lyrics in its tags and as a `.lrc` file beside it (synced when available) |
 | `playlist_folder` | `--playlist-folder` | bool | `true` | Put a playlist's tracks in a folder named after it |
 | `playlist_folder_case` | `--playlist-folder-case` | string | `lower` | `lower`, `capitalize` or `title` |
 | `format` | `--format` | string | `opus` | `opus`, `flac` or `mp3` |
@@ -497,6 +500,7 @@ youtube.cookies_from_browser = "auto"
 | `watch.interval` | `--watch-interval` | duration | `1s` | How often `watch` checks the clipboard |
 | `watch.notify` | `--watch-notify` | bool | `true` | Desktop notifications from `watch` |
 | `tools.yt_dlp` | `--tools-yt-dlp` | string | `yt-dlp` | Executables |
+| `tools.yt_dlp_args` | `--tools-yt-dlp-args` | list | | Arguments before all others when running yt-dlp (the zipapp when `tools.yt_dlp` is Python, as on Android) |
 | `tools.ffmpeg` | `--tools-ffmpeg` | string | `ffmpeg` | |
 | `tools.ffprobe` | `--tools-ffprobe` | string | `ffprobe` | |
 | `tools.wl_paste` | `--tools-wl-paste` | string | `wl-paste` | Clipboard reader for `watch` |
