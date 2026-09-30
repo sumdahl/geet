@@ -8,6 +8,19 @@ still change the CLI, the configuration or the `--json` output.
 ## [Unreleased]
 
 ### Added
+- `work_dir`: where songs are downloaded and converted before moving into
+  `output` (default: a hidden folder inside `output`, as before). A
+  `work_dir` on another filesystem works: the finished file is copied over.
+  Android's shared Music folder only accepts audio files, so the Geet app
+  keeps yt-dlp's `.webm`/`.part` files in its cache instead.
+
+### Fixed
+- A duplicate copied into place (`duplicates = copy`, or across
+  filesystems) kept its temporary name's missing extension until the last
+  moment, which Android's media folders refuse. It now has the song's
+  extension throughout.
+
+### Added
 - **Lyrics are saved with every song.** They're embedded in the file's tags
   (a `LYRICS` comment in opus and flac, `USLT` in mp3, where players look)
   and written beside it as `<name>.lrc`, synced when LRCLIB has timings.

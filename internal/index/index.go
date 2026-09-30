@@ -372,7 +372,9 @@ func Place(src, dest string, copyOnly bool) (linked bool, err error) {
 		return false, err
 	}
 	defer in.Close()
-	tmp, err := os.CreateTemp(filepath.Dir(dest), ".geet-copy-*")
+	// The temporary copy keeps dest's extension: Android's shared media
+	// folders refuse a file whose name doesn't say it's audio.
+	tmp, err := os.CreateTemp(filepath.Dir(dest), ".geet-copy-*"+filepath.Ext(dest))
 	if err != nil {
 		return false, err
 	}

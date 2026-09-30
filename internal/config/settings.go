@@ -33,6 +33,7 @@ func (c *Config) Settings() []Setting {
 		{Key: "bitrate", Usage: `audio bitrate such as 320k; empty means best available`, ptr: &c.Bitrate},
 		{Key: "overwrite", Usage: "re-download tracks whose file already exists instead of skipping them", ptr: &c.Overwrite},
 		{Key: "duplicates", Choices: duplicateModes, Usage: "a track already downloaded elsewhere (another playlist, or the same recording on another release): link (hard link, no extra space), copy, skip, or download again", ptr: &c.Duplicates},
+		{Key: "work_dir", Usage: "where songs are downloaded and converted before moving into output; empty means a hidden folder inside output (on Android, the app's cache, since the Music folder only takes audio files)", ptr: &c.WorkDir},
 		{Key: "index_path", Usage: "file remembering every downloaded track, for duplicates (default $XDG_DATA_HOME/geet/index.json)", ptr: &c.IndexPath},
 		{Key: "progress", Choices: progressAnswers, Usage: "animated progress bars: auto (only in a terminal, and not with --json), always or never", ptr: &c.Progress},
 		{Key: "download_retries", Usage: "extra attempts when a YouTube download fails (it is often a temporary 403 or throttling)", ptr: &c.DownloadRetries},

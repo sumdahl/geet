@@ -469,6 +469,7 @@ youtube.cookies_from_browser = "auto"
 |---|---|---|---|---|
 | `output` | `--output` | string | `~/Music` | Music library directory |
 | `output_template` | `--output-template` | string | `{title} - {artists}` | File path under `output`, without extension |
+| `work_dir` | `--work-dir` | string | | Where songs download and convert before moving into `output`; empty means a hidden folder inside it |
 | `lyrics` | `--lyrics` | bool | `true` | Save each song's lyrics in its tags and as a `.lrc` file beside it (synced when available) |
 | `playlist_folder` | `--playlist-folder` | bool | `true` | Put a playlist's tracks in a folder named after it |
 | `playlist_folder_case` | `--playlist-folder-case` | string | `lower` | `lower`, `capitalize` or `title` |
