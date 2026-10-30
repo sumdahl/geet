@@ -8,7 +8,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/mattn/go-runewidth v0.0.31
 	github.com/rivo/uniseg v0.4.7
-	github.com/vbauerster/mpb/v8 v8.16.2
+	github.com/vbauerster/mpb/v8 v8.16.3
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sync v0.24.0
 	golang.org/x/term v0.47.0
